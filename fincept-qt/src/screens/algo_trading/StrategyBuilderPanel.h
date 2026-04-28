@@ -22,6 +22,7 @@ class StrategyBuilderPanel : public QWidget {
     Q_OBJECT
   public:
     explicit StrategyBuilderPanel(QWidget* parent = nullptr);
+    void load_strategy(const fincept::services::algo::AlgoStrategy& strategy);
 
   private slots:
     void on_save();
@@ -41,6 +42,11 @@ class StrategyBuilderPanel : public QWidget {
     // Left pane — strategy editor
     QLineEdit*       name_edit_               = nullptr;
     QLineEdit*       desc_edit_               = nullptr;
+    QComboBox*       market_type_combo_       = nullptr;
+    QLabel*          market_id_label_         = nullptr;
+    QLineEdit*       market_id_edit_          = nullptr;
+    QLabel*          symbol_label_            = nullptr;
+    QLineEdit*       symbol_edit_             = nullptr;
     QComboBox*       timeframe_combo_         = nullptr;
     QComboBox*       entry_logic_combo_       = nullptr;
     QComboBox*       exit_logic_combo_        = nullptr;
@@ -51,6 +57,7 @@ class StrategyBuilderPanel : public QWidget {
     QVBoxLayout*     exit_conditions_layout_  = nullptr;
 
     // Right pane — backtest
+    QLabel*          bt_symbol_label_        = nullptr;
     QLineEdit*       bt_symbol_              = nullptr;
     QDoubleSpinBox*  bt_capital_             = nullptr;
     QLineEdit*       bt_start_date_          = nullptr;
@@ -73,6 +80,9 @@ class StrategyBuilderPanel : public QWidget {
     QLabel* kpi_profit_factor_val_ = nullptr;
     QLabel* kpi_profit_factor_sub_ = nullptr;
     QWidget* kpi_grid_widget_      = nullptr; // hidden until first result
+    QString current_strategy_id_;
+
+    void sync_market_type_ui();
 };
 
 } // namespace fincept::screens

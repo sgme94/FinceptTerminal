@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QUuid>
 
@@ -114,6 +115,7 @@ StrategyBuilderPanel::StrategyBuilderPanel(QWidget* parent) : QWidget(parent) {
 void StrategyBuilderPanel::connect_service() {
     auto& svc = AlgoTradingService::instance();
     connect(&svc, &AlgoTradingService::strategy_saved, this, [this](const QString& id) {
+        current_strategy_id_ = id;
         if (status_label_)
             status_label_->setText(QString("Strategy saved: %1").arg(id));
         status_label_->setStyleSheet(
@@ -253,6 +255,38 @@ QWidget* StrategyBuilderPanel::build_left_pane() {
     desc_edit_->setFixedHeight(30);
     vl->addWidget(desc_edit_);
 
+    auto* market_type_lbl = new QLabel("MARKET TYPE", content);
+    market_type_lbl->setStyleSheet(kLabelStyle());
+    vl->addWidget(market_type_lbl);
+    market_type_combo_ = new QComboBox(content);
+    market_type_combo_->addItem("Equity", "equity");
+    market_type_combo_->addItem("Polymarket", "polymarket");
+    market_type_combo_->setStyleSheet(kComboStyle());
+    market_type_combo_->setFixedHeight(30);
+    vl->addWidget(market_type_combo_);
+
+    market_id_label_ = new QLabel("MARKET ID", content);
+    market_id_label_->setStyleSheet(kLabelStyle());
+    vl->addWidget(market_id_label_);
+    market_id_edit_ = new QLineEdit(content);
+    market_id_edit_->setPlaceholderText("Optional condition ID");
+    market_id_edit_->setStyleSheet(kInputStyle());
+    market_id_edit_->setFixedHeight(30);
+    vl->addWidget(market_id_edit_);
+
+    symbol_label_ = new QLabel("SYMBOL", content);
+    symbol_label_->setStyleSheet(kLabelStyle());
+    vl->addWidget(symbol_label_);
+    symbol_edit_ = new QLineEdit(content);
+    symbol_edit_->setPlaceholderText("RELIANCE.NS or Polymarket token ID");
+    symbol_edit_->setStyleSheet(kInputStyle());
+    symbol_edit_->setFixedHeight(30);
+    connect(symbol_edit_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (bt_symbol_)
+            bt_symbol_->setText(text);
+    });
+    vl->addWidget(symbol_edit_);
+
     auto* tf_lbl = new QLabel("TIMEFRAME", content);
     tf_lbl->setStyleSheet(kLabelStyle());
     vl->addWidget(tf_lbl);
@@ -261,6 +295,9 @@ QWidget* StrategyBuilderPanel::build_left_pane() {
     timeframe_combo_->setStyleSheet(kComboStyle());
     timeframe_combo_->setFixedHeight(30);
     vl->addWidget(timeframe_combo_);
+
+    connect(market_type_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { sync_market_type_ui(); });
 
     // ── Entry Conditions ────────────────────────────────────────────────────
     auto* entry_hdr = new QWidget(content);
@@ -448,10 +485,20 @@ QWidget* StrategyBuilderPanel::build_right_pane() {
     };
 
     bt_symbol_ = new QLineEdit;
-    bt_symbol_->setPlaceholderText("RELIANCE");
+    bt_symbol_->setPlaceholderText("RELIANCE.NS");
+    bt_symbol_->setReadOnly(true);
     bt_symbol_->setStyleSheet(kInputStyle());
     bt_symbol_->setFixedHeight(30);
-    params_gl->addWidget(make_param_col("SYMBOL", bt_symbol_), 0, 0);
+    auto* symbol_col = new QWidget(params_grid);
+    auto* symbol_cvl = new QVBoxLayout(symbol_col);
+    symbol_cvl->setContentsMargins(0, 0, 0, 0);
+    symbol_cvl->setSpacing(2);
+    bt_symbol_label_ = new QLabel("SYMBOL", symbol_col);
+    bt_symbol_label_->setStyleSheet(kLabelStyle());
+    symbol_cvl->addWidget(bt_symbol_label_);
+    bt_symbol_->setParent(symbol_col);
+    symbol_cvl->addWidget(bt_symbol_);
+    params_gl->addWidget(symbol_col, 0, 0);
 
     bt_capital_ = new QDoubleSpinBox;
     bt_capital_->setStyleSheet(kSpinStyle());
@@ -615,13 +662,112 @@ void StrategyBuilderPanel::build_ui() {
     splitter->setStretchFactor(1, 3); // right ~60%
 
     root->addWidget(splitter, 1);
+    sync_market_type_ui();
 }
 
 // ── clear_results ────────────────────────────────────────────────────────────
 
+void StrategyBuilderPanel::sync_market_type_ui() {
+    const QString market_type = market_type_combo_ ? market_type_combo_->currentData().toString() : "equity";
+    const bool is_polymarket = market_type == "polymarket";
+
+    if (market_id_label_)
+        market_id_label_->setText(is_polymarket ? "CONDITION ID" : "MARKET ID");
+    if (market_id_edit_) {
+        market_id_edit_->setEnabled(is_polymarket);
+        if (!is_polymarket)
+            market_id_edit_->clear();
+        market_id_edit_->setPlaceholderText(is_polymarket ? "Optional condition ID" : "Unused for equity strategies");
+    }
+    if (symbol_label_)
+        symbol_label_->setText(is_polymarket ? "TOKEN ID" : "SYMBOL");
+    if (symbol_edit_)
+        symbol_edit_->setPlaceholderText(is_polymarket ? "Polymarket token ID" : "RELIANCE.NS");
+    if (bt_symbol_label_)
+        bt_symbol_label_->setText(is_polymarket ? "TOKEN ID" : "SYMBOL");
+    if (bt_symbol_)
+        bt_symbol_->setPlaceholderText(is_polymarket ? "Polymarket token ID" : "RELIANCE.NS");
+    if (timeframe_combo_) {
+        const QString current = timeframe_combo_->currentText();
+        const QStringList options = is_polymarket
+            ? QStringList{"1h", "4h", "1d", "1w", "1mth"}
+            : algo_timeframes();
+        QSignalBlocker blocker(timeframe_combo_);
+        timeframe_combo_->clear();
+        timeframe_combo_->addItems(options);
+        const int idx = options.indexOf(current);
+        timeframe_combo_->setCurrentIndex(idx >= 0 ? idx : (is_polymarket ? options.indexOf("1d") : 0));
+    }
+}
+
 void StrategyBuilderPanel::clear_results() {
     bt_empty_label_->setVisible(true);
     kpi_grid_widget_->setVisible(false);
+}
+
+void StrategyBuilderPanel::load_strategy(const AlgoStrategy& strategy) {
+    current_strategy_id_ = strategy.id;
+    name_edit_->setText(strategy.name);
+    desc_edit_->setText(strategy.description);
+
+    {
+        const QSignalBlocker blocker(market_type_combo_);
+        const int idx = market_type_combo_->findData(strategy.market_type.isEmpty() ? "equity" : strategy.market_type);
+        market_type_combo_->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+    market_id_edit_->setText(strategy.market_id);
+    symbol_edit_->setText(strategy.symbol);
+    sync_market_type_ui();
+    timeframe_combo_->setCurrentText(strategy.timeframe);
+    entry_logic_combo_->setCurrentText(strategy.entry_logic);
+    exit_logic_combo_->setCurrentText(strategy.exit_logic);
+    stop_loss_spin_->setValue(strategy.stop_loss);
+    take_profit_spin_->setValue(strategy.take_profit);
+    trailing_stop_spin_->setValue(strategy.trailing_stop);
+    bt_symbol_->setText(strategy.symbol);
+
+    auto load_conditions = [this](QVBoxLayout* layout, const QJsonArray& conditions) {
+        while (auto* item = layout->takeAt(0)) {
+            if (auto* widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+
+        QWidget* parent = layout->parentWidget() ? layout->parentWidget() : this;
+        const bool use_empty_row = conditions.isEmpty();
+        for (const auto& value : (use_empty_row ? QJsonArray{} : conditions)) {
+            auto* row = build_condition_row(parent);
+            auto* ind_combo = qobject_cast<QComboBox*>(row->property("ind_combo").value<QObject*>());
+            auto* field_combo = qobject_cast<QComboBox*>(row->property("field_combo").value<QObject*>());
+            auto* op_combo = qobject_cast<QComboBox*>(row->property("op_combo").value<QObject*>());
+            auto* val_spin = qobject_cast<QDoubleSpinBox*>(row->property("val_spin").value<QObject*>());
+            const auto cond = value.toObject();
+            if (ind_combo) {
+                const int idx = ind_combo->findData(cond.value("indicator").toString());
+                if (idx >= 0)
+                    ind_combo->setCurrentIndex(idx);
+            }
+            if (field_combo) {
+                const int idx = field_combo->findText(cond.value("field").toString());
+                if (idx >= 0)
+                    field_combo->setCurrentIndex(idx);
+            }
+            if (op_combo) {
+                const int idx = op_combo->findText(cond.value("operator").toString());
+                if (idx >= 0)
+                    op_combo->setCurrentIndex(idx);
+            }
+            if (val_spin)
+                val_spin->setValue(cond.value("value").toDouble());
+            layout->addWidget(row);
+        }
+        if (use_empty_row)
+            layout->addWidget(build_condition_row(parent));
+    };
+
+    load_conditions(entry_conditions_layout_, strategy.entry_conditions);
+    load_conditions(exit_conditions_layout_, strategy.exit_conditions);
+    clear_results();
 }
 
 // ── display_backtest_result — Quant Lab KPI card style ───────────────────────
@@ -709,9 +855,13 @@ void StrategyBuilderPanel::on_save() {
     }
 
     AlgoStrategy strategy;
-    strategy.id               = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    strategy.id               = current_strategy_id_.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces)
+                                                               : current_strategy_id_;
     strategy.name             = name_edit_->text().trimmed();
     strategy.description      = desc_edit_->text().trimmed();
+    strategy.market_type      = market_type_combo_->currentData().toString();
+    strategy.market_id        = strategy.market_type == "polymarket" ? market_id_edit_->text().trimmed() : QString();
+    strategy.symbol           = symbol_edit_->text().trimmed();
     strategy.timeframe        = timeframe_combo_->currentText();
     strategy.entry_conditions = gather_from_layout(entry_conditions_layout_);
     strategy.exit_conditions  = gather_from_layout(exit_conditions_layout_);
@@ -736,6 +886,9 @@ void StrategyBuilderPanel::on_save() {
         json["id"]            = strategy.id;
         json["name"]          = strategy.name;
         json["description"]   = strategy.description;
+        json["market_type"]   = strategy.market_type;
+        json["market_id"]     = strategy.market_id;
+        json["symbol"]        = strategy.symbol;
         json["timeframe"]     = strategy.timeframe;
         json["entry_logic"]   = strategy.entry_logic;
         json["exit_logic"]    = strategy.exit_logic;
@@ -771,9 +924,11 @@ void StrategyBuilderPanel::on_save() {
 // ── on_backtest ──────────────────────────────────────────────────────────────
 
 void StrategyBuilderPanel::on_backtest() {
-    QString symbol = bt_symbol_->text().trimmed();
+    const QString market_type = market_type_combo_->currentData().toString();
+    const QString symbol = symbol_edit_->text().trimmed();
     if (symbol.isEmpty()) {
-        status_label_->setText("Enter a symbol for backtesting.");
+        status_label_->setText(market_type == "polymarket" ? "Enter a token ID for backtesting."
+                                                             : "Enter a symbol for backtesting.");
         status_label_->setStyleSheet(
             QString("color: %1; font-size: %2px; %3 background: transparent; border: none;")
                 .arg(fincept::ui::colors::NEGATIVE())
@@ -794,11 +949,27 @@ void StrategyBuilderPanel::on_backtest() {
     if (start_date.isEmpty()) start_date = "2024-01-01";
     if (end_date.isEmpty())   end_date   = "2025-01-01";
 
-    QString strat_id = name_edit_->text().trimmed();
-    double  capital  = bt_capital_->value();
+    QJsonObject params;
+    params["strategy_id"] = current_strategy_id_;
+    params["name"] = name_edit_->text().trimmed();
+    params["market_type"] = market_type;
+    params["market_id"] = market_id_edit_->text().trimmed();
+    params["symbol"] = symbol;
+    params["timeframe"] = timeframe_combo_->currentText();
+    params["entry_conditions"] = gather_from_layout(entry_conditions_layout_);
+    params["exit_conditions"] = gather_from_layout(exit_conditions_layout_);
+    params["entry_logic"] = entry_logic_combo_->currentText();
+    params["exit_logic"] = exit_logic_combo_->currentText();
+    params["stop_loss"] = stop_loss_spin_->value();
+    params["take_profit"] = take_profit_spin_->value();
+    params["trailing_stop"] = trailing_stop_spin_->value();
+    params["start_date"] = start_date;
+    params["end_date"] = end_date;
+    params["initial_capital"] = bt_capital_->value();
 
-    AlgoTradingService::instance().run_backtest(strat_id, symbol, start_date, end_date, capital);
-    LOG_INFO("AlgoTrading", QString("Backtest requested: %1 on %2").arg(strat_id, symbol));
+    AlgoTradingService::instance().run_backtest(params);
+    LOG_INFO("AlgoTrading", QString("Backtest requested: %1 on %2")
+                                 .arg(current_strategy_id_.isEmpty() ? "unsaved" : current_strategy_id_, symbol));
 }
 
 // ── on_error ─────────────────────────────────────────────────────────────────

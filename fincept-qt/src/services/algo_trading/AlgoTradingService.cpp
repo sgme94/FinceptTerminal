@@ -46,6 +46,9 @@ void AlgoTradingService::save_strategy(const AlgoStrategy& strategy) {
     obj["id"] = strategy.id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : strategy.id;
     obj["name"] = strategy.name;
     obj["description"] = strategy.description;
+    obj["market_type"] = strategy.market_type;
+    obj["market_id"] = strategy.market_id;
+    obj["symbol"] = strategy.symbol;
     obj["timeframe"] = strategy.timeframe;
     obj["entry_conditions"] = strategy.entry_conditions;
     obj["exit_conditions"] = strategy.exit_conditions;
@@ -64,6 +67,7 @@ void AlgoTradingService::save_strategy(const AlgoStrategy& strategy) {
                    }
                    fincept::CacheManager::instance().remove(kStrategiesCacheKey);
                    emit strategy_saved(obj["id"].toString());
+                   list_strategies();
                });
 }
 
@@ -76,6 +80,9 @@ static QVector<AlgoStrategy> parse_strategies(const QJsonArray& arr) {
         s.id = o["id"].toString();
         s.name = o["name"].toString();
         s.description = o["description"].toString();
+        s.market_type = o["market_type"].toString("equity");
+        s.market_id = o["market_id"].toString();
+        s.symbol = o["symbol"].toString();
         s.timeframe = o["timeframe"].toString();
         s.entry_conditions = o["entry_conditions"].toArray();
         s.exit_conditions = o["exit_conditions"].toArray();
@@ -92,23 +99,16 @@ static QVector<AlgoStrategy> parse_strategies(const QJsonArray& arr) {
 }
 
 void AlgoTradingService::list_strategies() {
-    // Fast path: read pre-generated registry_index.json directly — no Python spawn needed
-    const QString json_path =
-        python::PythonRunner::instance().scripts_dir() + "/strategies/registry_index.json";
-    QFile f(json_path);
-    if (f.open(QIODevice::ReadOnly)) {
-        auto doc = QJsonDocument::fromJson(f.readAll());
-        f.close();
+    const QVariant cached = fincept::CacheManager::instance().get(kStrategiesCacheKey);
+    if (!cached.isNull()) {
+        auto doc = QJsonDocument::fromJson(cached.toString().toUtf8());
         if (!doc.isNull()) {
-            LOG_INFO("AlgoTrading", QString("Loaded registry from %1").arg(json_path));
             emit strategies_loaded(parse_strategies(doc.object()["strategies"].toArray()));
             return;
         }
     }
 
-    // Fallback: run Python to regenerate the index
-    LOG_WARN("AlgoTrading", "registry_index.json missing — falling back to Python");
-    run_python("algo_trading/backtest_engine.py", {"list_registry"}, "list_strategies",
+    run_python("algo_trading/backtest_engine.py", {"list_strategies", "--db", algo_db_path()}, "list_strategies",
                [this](bool ok, const QString& out) {
                    if (!ok) {
                        emit error_occurred("list_strategies", out);
@@ -116,6 +116,10 @@ void AlgoTradingService::list_strategies() {
                    }
                    auto doc = QJsonDocument::fromJson(python::extract_json(out).toUtf8());
                    auto obj = doc.object();
+                   fincept::CacheManager::instance().put(
+                       kStrategiesCacheKey,
+                       QVariant(QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact))),
+                       kStrategiesTtlSec, "algo_trading");
                    emit strategies_loaded(parse_strategies(obj["strategies"].toArray()));
                });
 }
@@ -228,14 +232,7 @@ void AlgoTradingService::list_deployments() {
 }
 
 // ── Backtesting ───────────────────────────────────────────────────────────────
-void AlgoTradingService::run_backtest(const QString& strategy_id, const QString& symbol, const QString& start_date,
-                                      const QString& end_date, double capital) {
-    QJsonObject params;
-    params["strategy_id"] = strategy_id;
-    params["symbol"] = symbol;
-    params["start_date"] = start_date;
-    params["end_date"] = end_date;
-    params["initial_capital"] = capital;
+void AlgoTradingService::run_backtest(const QJsonObject& params) {
     auto json = QJsonDocument(params).toJson(QJsonDocument::Compact);
 
     run_python("algo_trading/backtest_engine.py", {"run_backtest", json, "--db", algo_db_path()}, "backtest",

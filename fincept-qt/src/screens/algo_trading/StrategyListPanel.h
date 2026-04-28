@@ -18,6 +18,9 @@ class StrategyListPanel : public QWidget {
   public:
     explicit StrategyListPanel(QWidget* parent = nullptr);
 
+  signals:
+    void strategy_selected(fincept::services::algo::AlgoStrategy strategy);
+
   private slots:
     void on_strategies_loaded(QVector<fincept::services::algo::AlgoStrategy> strategies);
     void on_sort_changed(int index);

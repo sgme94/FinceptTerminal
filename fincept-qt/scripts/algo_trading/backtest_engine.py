@@ -29,6 +29,7 @@ import math
 import os
 import sqlite3
 import traceback
+from typing import Optional
 
 # Debug log collector
 DEBUG_LOG = []
@@ -71,6 +72,7 @@ except ImportError as e:
 
 # Minimum candles needed before we start evaluating (for indicator warmup)
 WARMUP_BARS = 50
+POLYMARKET_CLOB_API = "https://clob.polymarket.com"
 
 
 def fetch_from_yfinance(symbol: str, period: str, interval: str):
@@ -164,10 +166,92 @@ def fetch_from_candle_cache(db_path: str, symbol: str, timeframe: str, limit: in
         return None, f"Database error: {e}"
 
 
-def fetch_historical_data(symbol: str, period: str, interval: str, provider: str = 'yfinance', db_path: str = None):
+def fetch_polymarket_history(token_id: str, interval: str = '1d', fidelity: int = 5,
+                             start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Fetch Polymarket price history and normalize to OHLCV shape."""
+    debug(f"fetch_polymarket_history: token_id={token_id}, interval={interval}, fidelity={fidelity}, start={start_date}, end={end_date}")
+    try:
+        import requests
+
+        response = requests.get(
+            f"{POLYMARKET_CLOB_API}/prices-history",
+            params={"market": token_id, "interval": interval, "fidelity": fidelity},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        history = payload.get('history', [])
+        if not history:
+            return None, f"No price history for token {token_id}"
+
+        start_ts = None
+        end_ts = None
+        if start_date:
+            start_ts = int(pd.Timestamp(f"{start_date} 00:00:00", tz='UTC').timestamp())
+        if end_date:
+            end_ts = int(pd.Timestamp(f"{end_date} 23:59:59", tz='UTC').timestamp())
+
+        rows = []
+        prev_price = None
+        for point in history:
+            ts = int(point.get('t', 0) or 0)
+            if start_ts is not None and ts < start_ts:
+                continue
+            if end_ts is not None and ts > end_ts:
+                continue
+
+            price = float(point.get('p', 0) or 0)
+            if price <= 0:
+                continue
+            open_price = prev_price if prev_price is not None else price
+            rows.append({
+                'open': open_price,
+                'high': max(open_price, price),
+                'low': min(open_price, price),
+                'close': price,
+                'volume': 0.0,
+            })
+            prev_price = price
+
+        if not rows:
+            return None, f"No usable price points for token {token_id} in selected range"
+
+        df = pd.DataFrame(rows)
+        debug(f"fetch_polymarket_history success: {len(df)} rows")
+        return df[['open', 'high', 'low', 'close', 'volume']].reset_index(drop=True), None
+    except Exception as e:
+        debug(f"fetch_polymarket_history error: {e}\n{traceback.format_exc()}")
+        return None, f"Polymarket history error: {e}"
+
+
+def fetch_historical_data(symbol: str, period: str, interval: str, provider: str = 'yfinance', db_path: str = None,
+                          start_date: Optional[str] = None, end_date: Optional[str] = None):
     """Fetch OHLCV data from the specified provider."""
     debug(f"fetch_historical_data: symbol={symbol}, period={period}, interval={interval}, provider={provider}, db_path={db_path}")
 
+    if provider == 'polymarket':
+        interval_map = {
+            'live': ('1h', 1),
+            '1m': ('1h', 1),
+            '3m': ('1h', 1),
+            '5m': ('1h', 1),
+            '10m': ('1h', 1),
+            '15m': ('1h', 1),
+            '30m': ('1h', 1),
+            '1h': ('1h', 1),
+            '4h': ('6h', 1),
+            '1d': ('1d', 5),
+            '1w': ('1w', 30),
+            '1mth': ('1m', 60),
+        }
+        poly_interval, fidelity = interval_map.get(interval, ('1d', 5))
+        return fetch_polymarket_history(
+            symbol,
+            poly_interval,
+            fidelity,
+            start_date=start_date,
+            end_date=end_date,
+        )
     if provider == 'fyers' or provider == 'candle_cache':
         if not db_path:
             # Try default path
@@ -440,38 +524,59 @@ def open_db(db_path: str):
     return conn
 
 
+def ensure_algo_strategies_schema(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS algo_strategies (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            market_type TEXT DEFAULT 'equity',
+            market_id TEXT DEFAULT '',
+            symbol TEXT DEFAULT '',
+            timeframe TEXT DEFAULT '1d',
+            entry_conditions TEXT DEFAULT '[]',
+            exit_conditions TEXT DEFAULT '[]',
+            entry_logic TEXT DEFAULT 'AND',
+            exit_logic TEXT DEFAULT 'AND',
+            stop_loss REAL DEFAULT 0,
+            take_profit REAL DEFAULT 0,
+            trailing_stop REAL DEFAULT 0,
+            trailing_stop_type TEXT DEFAULT 'percent',
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    existing_columns = {
+        row['name'] for row in conn.execute("PRAGMA table_info(algo_strategies)").fetchall()
+    }
+    for column, definition in (
+        ('market_type', "TEXT DEFAULT 'equity'"),
+        ('market_id', "TEXT DEFAULT ''"),
+        ('symbol', "TEXT DEFAULT ''"),
+    ):
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE algo_strategies ADD COLUMN {column} {definition}")
+
+
 def cmd_save_strategy(params: dict, db_path: str):
     """Insert or replace a strategy in algo_strategies table."""
     try:
         conn = open_db(db_path)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS algo_strategies (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT DEFAULT '',
-                timeframe TEXT DEFAULT '1d',
-                entry_conditions TEXT DEFAULT '[]',
-                exit_conditions TEXT DEFAULT '[]',
-                entry_logic TEXT DEFAULT 'AND',
-                exit_logic TEXT DEFAULT 'AND',
-                stop_loss REAL DEFAULT 0,
-                take_profit REAL DEFAULT 0,
-                trailing_stop REAL DEFAULT 0,
-                trailing_stop_type TEXT DEFAULT 'percent',
-                is_active INTEGER DEFAULT 1,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        ensure_algo_strategies_schema(conn)
         conn.execute("""
             INSERT INTO algo_strategies
-                (id, name, description, timeframe,
+                (id, name, description, market_type, market_id, symbol, timeframe,
                  entry_conditions, exit_conditions, entry_logic, exit_logic,
                  stop_loss, take_profit, trailing_stop, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
+                market_type = excluded.market_type,
+                market_id = excluded.market_id,
+                symbol = excluded.symbol,
                 timeframe = excluded.timeframe,
                 entry_conditions = excluded.entry_conditions,
                 exit_conditions = excluded.exit_conditions,
@@ -482,12 +587,19 @@ def cmd_save_strategy(params: dict, db_path: str):
                 trailing_stop = excluded.trailing_stop,
                 updated_at = CURRENT_TIMESTAMP
         """, (
-            params['id'], params.get('name', ''), params.get('description', ''),
+            params['id'],
+            params.get('name', ''),
+            params.get('description', ''),
+            params.get('market_type', 'equity') or 'equity',
+            params.get('market_id', ''),
+            params.get('symbol', ''),
             params.get('timeframe', '1d'),
             json.dumps(params.get('entry_conditions', [])),
             json.dumps(params.get('exit_conditions', [])),
-            params.get('entry_logic', 'AND'), params.get('exit_logic', 'AND'),
-            params.get('stop_loss', 0), params.get('take_profit', 0),
+            params.get('entry_logic', 'AND'),
+            params.get('exit_logic', 'AND'),
+            params.get('stop_loss', 0),
+            params.get('take_profit', 0),
             params.get('trailing_stop', 0),
         ))
         conn.commit()
@@ -501,8 +613,9 @@ def cmd_list_strategies(db_path: str):
     """Return all strategies from DB."""
     try:
         conn = open_db(db_path)
+        ensure_algo_strategies_schema(conn)
         rows = conn.execute("""
-            SELECT id, name, description, timeframe,
+            SELECT id, name, description, market_type, market_id, symbol, timeframe,
                    entry_conditions, exit_conditions, entry_logic, exit_logic,
                    stop_loss, take_profit, trailing_stop,
                    is_active, created_at, updated_at
@@ -583,44 +696,100 @@ def cmd_delete_strategy(strategy_id: str, db_path: str):
         print(json.dumps({'success': False, 'error': str(e)}))
 
 
+def _flatten_conditions(conditions: list, logic: str) -> list:
+    items = conditions or []
+    if any(isinstance(item, str) for item in items):
+        return items
+
+    condition_items = [c for c in items if isinstance(c, dict)]
+    if not condition_items:
+        return []
+
+    flat = [condition_items[0]]
+    for cond in condition_items[1:]:
+        flat.append(logic)
+        flat.append(cond)
+    return flat
+
+
 def cmd_run_backtest(params: dict, db_path: str):
-    """Run walk-forward backtest for a strategy loaded from DB."""
+    """Run walk-forward backtest for a saved or unsaved strategy payload."""
     debug("cmd_run_backtest started")
     strategy_id = params.get('strategy_id', '')
-    symbol = params.get('symbol', '')
     start_date = params.get('start_date', '2024-01-01')
     end_date = params.get('end_date', '2025-01-01')
     initial_capital = float(params.get('initial_capital', 100000))
 
-    # Load strategy conditions from DB
-    entry_conditions = []
-    exit_conditions = []
-    stop_loss_pct = 0.0
-    take_profit_pct = 0.0
-    timeframe = '1d'
+    entry_conditions = params.get('entry_conditions', []) or []
+    exit_conditions = params.get('exit_conditions', []) or []
+    entry_logic = params.get('entry_logic', 'AND') or 'AND'
+    exit_logic = params.get('exit_logic', 'AND') or 'AND'
+    stop_loss_pct = float(params.get('stop_loss', 0) or 0)
+    take_profit_pct = float(params.get('take_profit', 0) or 0)
+    timeframe = params.get('timeframe', '1d') or '1d'
+    market_type = params.get('market_type', 'equity') or 'equity'
+    market_id = params.get('market_id', '') or ''
+    symbol = params.get('symbol', '') or ''
 
-    if db_path and os.path.exists(db_path):
+    if db_path and os.path.exists(db_path) and strategy_id:
         try:
             conn = open_db(db_path)
+            ensure_algo_strategies_schema(conn)
             row = conn.execute(
-                "SELECT entry_conditions, exit_conditions, entry_logic, exit_logic, "
-                "stop_loss, take_profit, timeframe FROM algo_strategies WHERE id = ?",
+                "SELECT market_type, market_id, symbol, timeframe, entry_conditions, exit_conditions, "
+                "entry_logic, exit_logic, stop_loss, take_profit FROM algo_strategies WHERE id = ?",
                 (strategy_id,)
             ).fetchone()
             conn.close()
             if row:
-                entry_conditions = json.loads(row['entry_conditions'] or '[]')
-                exit_conditions = json.loads(row['exit_conditions'] or '[]')
-                stop_loss_pct = row['stop_loss'] or 0.0
-                take_profit_pct = row['take_profit'] or 0.0
-                timeframe = row['timeframe'] or '1d'
+                if not params.get('entry_conditions'):
+                    entry_conditions = json.loads(row['entry_conditions'] or '[]')
+                if not params.get('exit_conditions'):
+                    exit_conditions = json.loads(row['exit_conditions'] or '[]')
+                if 'entry_logic' not in params:
+                    entry_logic = row['entry_logic'] or 'AND'
+                if 'exit_logic' not in params:
+                    exit_logic = row['exit_logic'] or 'AND'
+                if 'stop_loss' not in params:
+                    stop_loss_pct = row['stop_loss'] or 0.0
+                if 'take_profit' not in params:
+                    take_profit_pct = row['take_profit'] or 0.0
+                if not params.get('timeframe'):
+                    timeframe = row['timeframe'] or '1d'
+                if not params.get('market_type'):
+                    market_type = row['market_type'] or 'equity'
+                if not params.get('market_id'):
+                    market_id = row['market_id'] or ''
+                if not params.get('symbol'):
+                    symbol = row['symbol'] or ''
                 debug(f"Strategy loaded from DB: {len(entry_conditions)} entry, {len(exit_conditions)} exit conditions")
             else:
-                debug(f"Strategy {strategy_id} not found in DB, proceeding with empty conditions")
+                debug(f"Strategy {strategy_id} not found in DB, using request payload")
         except Exception as e:
             debug(f"Failed to load strategy from DB: {e}")
 
-    # Determine period string from date range for yfinance
+    data_symbol = symbol if market_type == 'polymarket' else symbol
+    provider = 'polymarket' if market_type == 'polymarket' else 'yfinance'
+
+    if market_type == 'polymarket' and not symbol:
+        print(json.dumps({
+            'success': False,
+            'error': 'Missing Polymarket token ID for backtest.',
+            'debug': DEBUG_LOG,
+        }))
+        return
+
+    if not data_symbol:
+        print(json.dumps({
+            'success': False,
+            'error': 'Missing symbol for backtest.',
+            'debug': DEBUG_LOG,
+        }))
+        return
+
+    entry_conditions = _flatten_conditions(entry_conditions, entry_logic)
+    exit_conditions = _flatten_conditions(exit_conditions, exit_logic)
+
     try:
         from datetime import datetime as dt
         d1 = dt.strptime(start_date, '%Y-%m-%d')
@@ -639,21 +808,31 @@ def cmd_run_backtest(params: dict, db_path: str):
     except Exception:
         period = '1y'
 
-    debug(f"Fetching data: symbol={symbol}, period={period}, timeframe={timeframe}")
+    debug(f"Fetching data: symbol={data_symbol}, period={period}, timeframe={timeframe}, provider={provider}")
     try:
-        df, error = fetch_historical_data(symbol, period, timeframe, provider='yfinance', db_path=db_path)
+        df, error = fetch_historical_data(
+            data_symbol,
+            period,
+            timeframe,
+            provider=provider,
+            db_path=db_path,
+            start_date=start_date,
+            end_date=end_date,
+        )
     except Exception as e:
         debug(f"Exception fetching data: {e}\n{traceback.format_exc()}")
         print(json.dumps({'success': False, 'error': f'Exception fetching data: {e}', 'debug': DEBUG_LOG}))
         return
 
     if error or df is None or (hasattr(df, 'empty') and df.empty):
-        print(json.dumps({
+        response = {
             'success': False,
-            'error': error or f'No historical data for {symbol}',
-            'hint': 'Use .NS suffix for NSE stocks (e.g. RELIANCE.NS) for yfinance.',
+            'error': error or f'No historical data for {data_symbol}',
             'debug': DEBUG_LOG,
-        }))
+        }
+        if provider == 'yfinance':
+            response['hint'] = 'Use .NS suffix for NSE stocks (e.g. RELIANCE.NS) for yfinance.'
+        print(json.dumps(response))
         return
 
     if len(df) < WARMUP_BARS + 10:
@@ -680,13 +859,17 @@ def cmd_run_backtest(params: dict, db_path: str):
         return
 
     metrics = result.get('metrics', {})
+    final_value = initial_capital + metrics.get('total_return', 0)
     print(json.dumps({
         'success': True,
         'symbol': symbol,
+        'market_id': market_id,
+        'market_type': market_type,
         'timeframe': timeframe,
         'total_bars': len(df),
         'total_return': metrics.get('total_return_pct', 0),
         'total_return_abs': metrics.get('total_return', 0),
+        'final_value': round(final_value, 2),
         'sharpe_ratio': metrics.get('sharpe', 0),
         'max_drawdown': metrics.get('max_drawdown', 0),
         'total_trades': metrics.get('total_trades', 0),

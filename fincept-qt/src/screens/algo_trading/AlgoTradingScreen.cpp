@@ -72,6 +72,10 @@ void AlgoTradingScreen::build_ui() {
     content_stack_->addWidget(strategies_);
     content_stack_->addWidget(scanner_);
     content_stack_->addWidget(dashboard_);
+    connect(strategies_, &StrategyListPanel::strategy_selected, this, [this](const AlgoStrategy& strategy) {
+        builder_->load_strategy(strategy);
+        on_tab_changed(0);
+    });
     root->addWidget(content_stack_, 1);
 
     root->addWidget(build_status_bar());

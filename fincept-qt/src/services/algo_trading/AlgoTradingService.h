@@ -25,8 +25,7 @@ class AlgoTradingService : public QObject {
     void list_deployments();
 
     // ── Backtesting ─────────────────────────────────────────────────────────
-    void run_backtest(const QString& strategy_id, const QString& symbol, const QString& start_date,
-                      const QString& end_date, double capital);
+    void run_backtest(const QJsonObject& params);
 
     // ── Scanner ─────────────────────────────────────────────────────────────
     void run_scan(const QJsonArray& conditions, const QStringList& symbols, const QString& timeframe, int lookback_days,

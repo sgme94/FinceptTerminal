@@ -15,6 +15,9 @@ struct AlgoStrategy {
     QString id;
     QString name;
     QString description;
+    QString market_type = "equity";
+    QString market_id;
+    QString symbol;
     QString timeframe; // live, 1m, 5m, 15m, 1h, 4h, 1d
     QJsonArray entry_conditions;
     QJsonArray exit_conditions;

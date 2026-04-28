@@ -68,7 +68,7 @@ void StrategyListPanel::build_ui() {
     cat_combo_ = new QComboBox(top_bar);
     cat_combo_->setFixedHeight(28);
     cat_combo_->setFixedWidth(150);
-    cat_combo_->addItem("All Categories");
+    cat_combo_->addItem("All Markets");
     const QString combo_style =
         QString("QComboBox { background:%1; color:%2; border:1px solid %3;"
                 " padding:2px 6px; font-size:%4px; font-family:%5; }"
@@ -93,7 +93,7 @@ void StrategyListPanel::build_ui() {
     sort_combo_ = new QComboBox(top_bar);
     sort_combo_->setFixedHeight(28);
     sort_combo_->setFixedWidth(120);
-    sort_combo_->addItems({"Name A→Z", "Name Z→A", "Category"});
+    sort_combo_->addItems({"Name A→Z", "Name Z→A", "Market"});
     sort_combo_->setStyleSheet(combo_style);
     top_hl->addWidget(sort_combo_);
 
@@ -109,8 +109,8 @@ void StrategyListPanel::build_ui() {
 
     // ── Table ────────────────────────────────────────────────────────────────
     table_ = new QTableWidget(this);
-    table_->setColumnCount(4); // #, NAME, CATEGORY, ID
-    table_->setHorizontalHeaderLabels({"#", "STRATEGY NAME", "CATEGORY", "ID"});
+    table_->setColumnCount(4); // #, NAME, MARKET, ID
+    table_->setHorizontalHeaderLabels({"#", "STRATEGY NAME", "MARKET", "ID"});
     table_->verticalHeader()->setVisible(false);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -190,6 +190,11 @@ void StrategyListPanel::build_ui() {
             this, &StrategyListPanel::on_sort_changed);
     connect(prev_btn_, &QPushButton::clicked, this, [this]() { go_to_page(current_page_ - 1); });
     connect(next_btn_, &QPushButton::clicked, this, [this]() { go_to_page(current_page_ + 1); });
+    connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        const int idx = current_page_ * kPageSize + row;
+        if (idx >= 0 && idx < filtered_.size())
+            emit strategy_selected(filtered_[idx]);
+    });
 }
 
 // ── Render page ──────────────────────────────────────────────────────────────
@@ -223,8 +228,9 @@ void StrategyListPanel::render_page() {
         name_item->setForeground(QColor(colors::AMBER()));
         table_->setItem(row, 1, name_item);
 
-        // Col 2: category (description field)
-        auto* cat_item = new QTableWidgetItem(s.description);
+        // Col 2: market type
+        const QString market = s.market_type.isEmpty() ? "equity" : s.market_type;
+        auto* cat_item = new QTableWidgetItem(market.toUpper());
         cat_item->setForeground(QColor(colors::CYAN()));
         cat_item->setTextAlignment(Qt::AlignCenter);
         table_->setItem(row, 2, cat_item);
@@ -263,15 +269,17 @@ void StrategyListPanel::on_filter_changed(const QString&) {
     const QString text = search_edit_->text().trimmed().toLower();
     const QString cat  = cat_combo_->currentIndex() == 0
                            ? QString()
-                           : cat_combo_->currentText();
+                           : cat_combo_->currentData().toString();
 
     filtered_.clear();
     filtered_.reserve(strategies_.size());
     for (const auto& s : strategies_) {
         if (!text.isEmpty() && !s.name.toLower().contains(text) &&
-            !s.description.toLower().contains(text))
+            !s.description.toLower().contains(text) &&
+            !s.symbol.toLower().contains(text) &&
+            !s.market_id.toLower().contains(text))
             continue;
-        if (!cat.isEmpty() && s.description != cat)
+        if (!cat.isEmpty() && s.market_type != cat)
             continue;
         filtered_.append(s);
     }
@@ -287,10 +295,10 @@ void StrategyListPanel::on_sort_changed(int index) {
     } else if (index == 1) { // Name Z→A
         std::sort(filtered_.begin(), filtered_.end(),
                   [](const AlgoStrategy& a, const AlgoStrategy& b) { return a.name > b.name; });
-    } else if (index == 2) { // Category
+    } else if (index == 2) { // Market
         std::sort(filtered_.begin(), filtered_.end(),
                   [](const AlgoStrategy& a, const AlgoStrategy& b) {
-                      return a.description < b.description || (a.description == b.description && a.name < b.name);
+                      return a.market_type < b.market_type || (a.market_type == b.market_type && a.name < b.name);
                   });
     }
     current_page_ = 0;
@@ -302,30 +310,28 @@ void StrategyListPanel::on_sort_changed(int index) {
 void StrategyListPanel::on_strategies_loaded(QVector<AlgoStrategy> strategies) {
     strategies_ = std::move(strategies);
 
-    // Populate category combo from unique categories
-    const QString prev_cat = cat_combo_->currentIndex() > 0 ? cat_combo_->currentText() : QString();
+    // Populate market combo from unique market types
+    const QString prev_cat = cat_combo_->currentIndex() > 0 ? cat_combo_->currentData().toString() : QString();
     cat_combo_->blockSignals(true);
     cat_combo_->clear();
-    cat_combo_->addItem("All Categories");
+    cat_combo_->addItem("All Markets");
     QStringList cats;
-    for (const auto& s : strategies_)
-        if (!cats.contains(s.description))
-            cats.append(s.description);
+    for (const auto& s : strategies_) {
+        const QString market = s.market_type.isEmpty() ? "equity" : s.market_type;
+        if (!cats.contains(market))
+            cats.append(market);
+    }
     cats.sort();
     for (const auto& c : cats)
-        cat_combo_->addItem(c);
+        cat_combo_->addItem(c.toUpper(), c);
     if (!prev_cat.isEmpty()) {
-        int idx = cat_combo_->findText(prev_cat);
+        int idx = cat_combo_->findData(prev_cat);
         if (idx >= 0) cat_combo_->setCurrentIndex(idx);
     }
     cat_combo_->blockSignals(false);
 
-    // Reset filtered to full list, sort by name
-    filtered_ = strategies_;
-    std::sort(filtered_.begin(), filtered_.end(),
-              [](const AlgoStrategy& a, const AlgoStrategy& b) { return a.name < b.name; });
-    current_page_ = 0;
-    render_page();
+    on_filter_changed(search_edit_->text());
+    on_sort_changed(sort_combo_->currentIndex());
 
     LOG_INFO("AlgoTrading", QString("Loaded %1 strategies").arg(strategies_.size()));
 }
