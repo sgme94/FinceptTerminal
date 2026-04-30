@@ -262,8 +262,8 @@ void PolymarketDetailPanel::set_bot_observation(const QVariantMap& observation) 
         return;
     }
 
-    const auto signals = observation.value("outcome_signals").toList();
-    for (const auto& value : signals) {
+    const auto signal_rows = observation.value("outcome_signals").toList();
+    for (const auto& value : signal_rows) {
         const auto s = value.toMap();
         add_line(QString("%1 %2 price %3 prob %4 edge %5")
                      .arg(s.value("outcome").toString(),

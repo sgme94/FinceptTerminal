@@ -702,13 +702,13 @@ QVariantMap PolymarketScreen::load_bot_observation(const pred::PredictionMarket&
         if (outcome.asset_id.isEmpty())
             continue;
         asset_ids.append(outcome.asset_id);
-        outcome_by_asset.insert(outcome.asset_id, outcome.label);
+        outcome_by_asset.insert(outcome.asset_id, outcome.name);
     }
     if (asset_ids.isEmpty())
         return observation;
 
     const QString connection_name = "poly_bot_obs_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
-    QVariantList signals;
+    QVariantList signal_rows;
     QVariantList trades;
     QVariantList positions;
     QVariantMap freshness;
@@ -739,7 +739,7 @@ QVariantMap PolymarketScreen::load_bot_observation(const pred::PredictionMarket&
                 row["reason"] = signal_q.value(4).toString();
                 row["updated_at"] = signal_q.value(5).toString();
                 row["source_api"] = "https://clob.polymarket.com";
-                signals.append(row);
+                signal_rows.append(row);
                 freshness["last_signal_update"] = signal_q.value(5).toString();
             }
 
@@ -794,11 +794,11 @@ QVariantMap PolymarketScreen::load_bot_observation(const pred::PredictionMarket&
     if (!opened)
         return observation;
 
-    observation["outcome_signals"] = signals;
+    observation["outcome_signals"] = signal_rows;
     observation["recent_trades"] = trades;
     observation["positions"] = positions;
     observation["freshness"] = freshness;
-    observation["tracked"] = !signals.isEmpty() || !trades.isEmpty() || !positions.isEmpty();
+    observation["tracked"] = !signal_rows.isEmpty() || !trades.isEmpty() || !positions.isEmpty();
     return observation;
 }
 
