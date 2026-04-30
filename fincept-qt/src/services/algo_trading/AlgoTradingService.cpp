@@ -54,6 +54,7 @@ void AlgoTradingService::save_strategy(const AlgoStrategy& strategy) {
     obj["exit_conditions"] = strategy.exit_conditions;
     obj["entry_logic"] = strategy.entry_logic;
     obj["exit_logic"] = strategy.exit_logic;
+    obj["bot_config"] = strategy.bot_config;
     obj["stop_loss"] = strategy.stop_loss;
     obj["take_profit"] = strategy.take_profit;
     obj["trailing_stop"] = strategy.trailing_stop;
@@ -88,6 +89,7 @@ static QVector<AlgoStrategy> parse_strategies(const QJsonArray& arr) {
         s.exit_conditions = o["exit_conditions"].toArray();
         s.entry_logic = o["entry_logic"].toString("AND");
         s.exit_logic = o["exit_logic"].toString("AND");
+        s.bot_config = o["bot_config"].toObject();
         s.stop_loss = o["stop_loss"].toDouble();
         s.take_profit = o["take_profit"].toDouble();
         s.trailing_stop = o["trailing_stop"].toDouble();
@@ -198,6 +200,18 @@ static QVector<AlgoDeployment> parse_deployments(const QJsonArray& arr) {
         d.position_qty = o["current_position_qty"].toDouble();
         d.position_side = o["current_position_side"].toString();
         d.position_entry = o["current_position_entry"].toDouble();
+        d.poly_candidate_count = o["poly_candidate_count"].toInt();
+        d.poly_signal_count = o["poly_signal_count"].toInt();
+        d.poly_skipped_count = o["poly_skipped_count"].toInt();
+        d.poly_position_count = o["poly_position_count"].toInt();
+        d.poly_latest_signal = o["poly_latest_signal"].toString();
+        d.poly_bot_state = o["poly_bot_state"].toString();
+        d.poly_scanned_count = o["poly_scanned_count"].toInt();
+        d.poly_realized_pnl = o["poly_realized_pnl"].toDouble();
+        d.poly_unrealized_pnl = o["poly_unrealized_pnl"].toDouble();
+        d.poly_top_skipped_reasons = o["poly_top_skipped_reasons"].toString();
+        d.poly_recent_fills = o["poly_recent_fills"].toString();
+        d.poly_latest_signal_details = o["poly_latest_signal_details"].toString();
         d.created_at = o["created_at"].toString();
         d.updated_at = o["updated_at"].toString();
         deployments.append(d);

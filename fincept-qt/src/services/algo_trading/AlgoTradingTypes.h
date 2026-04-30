@@ -23,6 +23,7 @@ struct AlgoStrategy {
     QJsonArray exit_conditions;
     QString entry_logic = "AND"; // AND, OR
     QString exit_logic = "AND";
+    QJsonObject bot_config;
     double stop_loss = 0;
     double take_profit = 0;
     double trailing_stop = 0;
@@ -56,6 +57,20 @@ struct AlgoDeployment {
     double position_qty = 0;
     QString position_side;
     double position_entry = 0;
+
+    // Polymarket paper bot summary
+    int poly_candidate_count = 0;
+    int poly_signal_count = 0;
+    int poly_skipped_count = 0;
+    int poly_position_count = 0;
+    QString poly_latest_signal;
+    QString poly_bot_state;
+    int poly_scanned_count = 0;
+    double poly_realized_pnl = 0;
+    double poly_unrealized_pnl = 0;
+    QString poly_top_skipped_reasons;
+    QString poly_recent_fills;
+    QString poly_latest_signal_details;
 };
 
 inline QColor deployment_status_color(const QString& status) {
