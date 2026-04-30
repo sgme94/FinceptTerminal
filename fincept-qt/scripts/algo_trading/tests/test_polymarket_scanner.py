@@ -16,6 +16,16 @@ from polymarket_models import (
     RiskConfig,
     SignalDecision,
 )
+from polymarket_scanner import scan_markets
+from polymarket_sources import load_fixture
+
+
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture
+def gamma_fixture():
+    return load_fixture(FIXTURE_DIR / "polymarket_gamma_markets.json")
 
 
 def test_order_book_best_prices_parse_string_numbers():
@@ -77,3 +87,25 @@ def test_polymarket_model_defaults_are_constructible():
     assert RiskConfig(max_order_usdc=25).max_order_usdc == 25
     assert fill.notional == pytest.approx(4.2)
     assert position.market_value(0.55) == pytest.approx(5.5)
+
+
+def test_scanner_filters_closed_low_liquidity_tags_and_expiry(gamma_fixture):
+    result = scan_markets(
+        gamma_fixture["data"],
+        config={
+            "min_volume": 1000,
+            "min_liquidity": 500,
+            "min_price": 0.05,
+            "max_price": 0.95,
+            "excluded_tags": ["sports"],
+            "min_time_to_expiry_hours": 24,
+            "sort_by": "volume",
+        },
+        fetched_at=gamma_fixture["fetched_at"],
+    )
+
+    assert [c.asset_id for c in result.candidates] == ["yes-token-1", "no-token-1"]
+    assert any(s.reason == "closed" for s in result.skipped)
+    assert any(s.reason == "low_liquidity" for s in result.skipped)
+    assert any(s.reason == "excluded_tag" for s in result.skipped)
+    assert any(s.reason == "near_expiry" for s in result.skipped)
