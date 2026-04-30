@@ -43,6 +43,24 @@ debug(f"Python version: {sys.version}")
 debug(f"Working directory: {os.getcwd()}")
 debug(f"Script location: {os.path.abspath(__file__)}")
 
+
+def polymarket_token_id_from_payload(payload: dict) -> str:
+    """Return the CLOB token id from explicit or legacy strategy fields."""
+    if not isinstance(payload, dict):
+        return ""
+    token_id = payload.get('token_id') or payload.get('asset_id') or payload.get('clob_token_id') or ""
+    if token_id:
+        return str(token_id).strip()
+    bot_config = payload.get('bot_config') or {}
+    if isinstance(bot_config, str):
+        try:
+            bot_config = json.loads(bot_config or '{}')
+        except Exception:
+            bot_config = {}
+    if isinstance(bot_config, dict):
+        token_id = bot_config.get('token_id') or bot_config.get('asset_id') or bot_config.get('clob_token_id') or ""
+    return str(token_id).strip() if token_id else ""
+
 try:
     import pandas as pd
     debug(f"pandas version: {pd.__version__}")
@@ -565,6 +583,11 @@ def ensure_algo_strategies_schema(conn):
 def cmd_save_strategy(params: dict, db_path: str):
     """Insert or replace a strategy in algo_strategies table."""
     try:
+        market_type = params.get('market_type', 'equity') or 'equity'
+        symbol = params.get('symbol', '')
+        if market_type == 'polymarket' and not symbol:
+            symbol = polymarket_token_id_from_payload(params)
+
         conn = open_db(db_path)
         ensure_algo_strategies_schema(conn)
         conn.execute("""
@@ -593,9 +616,9 @@ def cmd_save_strategy(params: dict, db_path: str):
             params['id'],
             params.get('name', ''),
             params.get('description', ''),
-            params.get('market_type', 'equity') or 'equity',
+            market_type,
             params.get('market_id', ''),
-            params.get('symbol', ''),
+            symbol,
             params.get('timeframe', '1d'),
             json.dumps(params.get('entry_conditions', [])),
             json.dumps(params.get('exit_conditions', [])),
@@ -738,6 +761,8 @@ def cmd_run_backtest(params: dict, db_path: str):
     market_type = params.get('market_type', 'equity') or 'equity'
     market_id = params.get('market_id', '') or ''
     symbol = params.get('symbol', '') or ''
+    if market_type == 'polymarket' and not symbol:
+        symbol = polymarket_token_id_from_payload(params)
 
     if db_path and os.path.exists(db_path) and strategy_id:
         try:
@@ -745,7 +770,7 @@ def cmd_run_backtest(params: dict, db_path: str):
             ensure_algo_strategies_schema(conn)
             row = conn.execute(
                 "SELECT market_type, market_id, symbol, timeframe, entry_conditions, exit_conditions, "
-                "entry_logic, exit_logic, stop_loss, take_profit FROM algo_strategies WHERE id = ?",
+                "entry_logic, exit_logic, stop_loss, take_profit, bot_config FROM algo_strategies WHERE id = ?",
                 (strategy_id,)
             ).fetchone()
             conn.close()
@@ -770,6 +795,8 @@ def cmd_run_backtest(params: dict, db_path: str):
                     market_id = row['market_id'] or ''
                 if not params.get('symbol'):
                     symbol = row['symbol'] or ''
+                if (row['market_type'] or market_type) == 'polymarket' and not symbol:
+                    symbol = polymarket_token_id_from_payload({'bot_config': row['bot_config'] or '{}'})
                 debug(f"Strategy loaded from DB: {len(entry_conditions)} entry, {len(exit_conditions)} exit conditions")
             else:
                 debug(f"Strategy {strategy_id} not found in DB, using request payload")

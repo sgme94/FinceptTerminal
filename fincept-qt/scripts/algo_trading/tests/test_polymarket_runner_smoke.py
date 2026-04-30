@@ -6,15 +6,18 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
+import pandas as pd
+
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import backtest_engine
 from polymarket_runner import run_polymarket_cycle
 from polymarket_sources import load_fixture
 from polymarket_store import ensure_polymarket_schema
-from backtest_engine import cmd_list_strategies, cmd_save_strategy
+from backtest_engine import cmd_list_strategies, cmd_run_backtest, cmd_save_strategy
 from algo_live_runner import load_strategy, open_db_connection
 from algo_manager import cmd_list_deployments
 
@@ -176,6 +179,63 @@ def test_strategy_save_and_list_preserves_bot_config(tmp_path):
     assert strategies[0]["market_type"] == "polymarket"
     assert strategies[0]["bot_config"]["max_candidates"] == 3
     assert strategies[0]["bot_config"]["min_edge"] == 0.02
+
+
+def test_saved_polymarket_strategy_uses_token_id_for_backtest(tmp_path, monkeypatch):
+    db = tmp_path / "fincept.db"
+    token_id = "yes-token-1"
+    captured = {}
+
+    candles = pd.DataFrame(
+        {
+            "open": [0.51] * 65,
+            "high": [0.53] * 65,
+            "low": [0.50] * 65,
+            "close": [0.52] * 65,
+            "volume": [1000] * 65,
+        },
+        index=pd.date_range("2026-01-01", periods=65, freq="D"),
+    )
+
+    def fake_fetch(symbol, period, interval, **kwargs):
+        captured.update(symbol=symbol, period=period, interval=interval, kwargs=kwargs)
+        return candles, None
+
+    monkeypatch.setattr(backtest_engine, "fetch_historical_data", fake_fetch)
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_save_strategy(
+            {
+                "id": "strat-token",
+                "name": "Polymarket token backtest",
+                "market_type": "polymarket",
+                "token_id": token_id,
+                "timeframe": "1d",
+                "entry_conditions": [],
+                "exit_conditions": [],
+            },
+            str(db),
+        )
+    assert json.loads(out.getvalue())["success"] is True
+
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_run_backtest(
+            {
+                "strategy_id": "strat-token",
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-15",
+                "initial_capital": 1000,
+            },
+            str(db),
+        )
+    result = json.loads(out.getvalue())
+
+    assert result["success"] is True
+    assert result["market_type"] == "polymarket"
+    assert result["symbol"] == token_id
+    assert captured["symbol"] == token_id
+    assert captured["kwargs"]["provider"] == "polymarket"
 
 
 def test_live_runner_load_strategy_returns_polymarket_config(tmp_path):
