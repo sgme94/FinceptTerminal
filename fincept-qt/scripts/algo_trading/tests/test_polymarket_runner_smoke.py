@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
@@ -263,3 +264,29 @@ def test_runner_exits_existing_position_on_edge_reversal(tmp_path):
 
     assert result["exits"] == 1
     assert latest_trade_side(db) == "SELL"
+
+
+def test_runner_smoke_command_uses_fixtures_without_network(tmp_path):
+    db = tmp_path / "fincept.db"
+    script = SCRIPT_DIR / "polymarket_runner.py"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "smoke",
+            "--fixture-dir",
+            str(FIXTURE_DIR),
+            "--db",
+            str(db),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["success"] is True
+    assert payload["scanned"] == 1
+    assert payload["signals"] == 1
+    assert count_rows(db, "algo_polymarket_paper_trades") == 1

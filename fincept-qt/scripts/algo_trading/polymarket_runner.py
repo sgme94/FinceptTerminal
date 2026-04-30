@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import time
 from dataclasses import fields
 from datetime import datetime, timezone
+from pathlib import Path
 
 from polymarket_config import default_bot_config
 from polymarket_edge import compute_edge_signal
@@ -12,7 +14,7 @@ from polymarket_models import OrderBook, RiskConfig, SignalDecision
 from polymarket_paper import apply_fill_to_position, should_exit_position, simulate_entry_fill, simulate_exit_fill
 from polymarket_risk import PortfolioState, check_entry_risk
 from polymarket_scanner import scan_markets
-from polymarket_sources import PolymarketRestSource
+from polymarket_sources import PolymarketRestSource, load_fixture
 from polymarket_store import (
     delete_position,
     ensure_polymarket_schema,
@@ -265,3 +267,54 @@ def _parse_utc(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _seed_smoke_strategy(db_path: str) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS algo_strategies (
+            id TEXT PRIMARY KEY,
+            market_type TEXT DEFAULT 'polymarket',
+            bot_config TEXT DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO algo_strategies (id, market_type, bot_config)
+        VALUES (?, 'polymarket', ?)
+        """,
+        ("smoke-strategy", json.dumps({"max_candidates": 1, "min_edge": 0.01})),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _run_smoke(args) -> dict:
+    fixture_dir = Path(args.fixture_dir)
+    _seed_smoke_strategy(args.db)
+    return run_polymarket_cycle(
+        db_path=args.db,
+        deployment_id="smoke-deployment",
+        strategy_id="smoke-strategy",
+        market_payload=load_fixture(fixture_dir / "polymarket_gamma_markets.json"),
+        order_books={"yes-token-1": load_fixture(fixture_dir / "polymarket_clob_book_yes.json")},
+        now="2026-04-30T00:00:00Z",
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Polymarket paper bot runner")
+    sub = parser.add_subparsers(dest="command", required=True)
+    smoke = sub.add_parser("smoke", help="Run one fixture-backed paper cycle")
+    smoke.add_argument("--fixture-dir", required=True)
+    smoke.add_argument("--db", required=True)
+    args = parser.parse_args()
+
+    if args.command == "smoke":
+        print(json.dumps(_run_smoke(args)))
+
+
+if __name__ == "__main__":
+    main()
