@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import fields
 from datetime import datetime, timezone
 
@@ -11,6 +12,7 @@ from polymarket_models import OrderBook, RiskConfig, SignalDecision
 from polymarket_paper import apply_fill_to_position, should_exit_position, simulate_entry_fill, simulate_exit_fill
 from polymarket_risk import PortfolioState, check_entry_risk
 from polymarket_scanner import scan_markets
+from polymarket_sources import PolymarketRestSource
 from polymarket_store import (
     delete_position,
     ensure_polymarket_schema,
@@ -32,13 +34,15 @@ def run_polymarket_cycle(
     market_payload: dict,
     order_books: dict[str, dict] | None = None,
     edge_overrides: dict[str, dict] | None = None,
+    source: PolymarketRestSource | None = None,
     now: str,
 ) -> dict:
     conn = sqlite3.connect(db_path)
     try:
         ensure_polymarket_schema(conn)
         cfg = _load_bot_config(conn, strategy_id)
-        books = order_books or {}
+        books = dict(order_books or {})
+        should_fetch_books = order_books is None
         overrides = edge_overrides or {}
 
         result = {
@@ -60,6 +64,12 @@ def run_polymarket_cycle(
             record_candidate(conn, deployment_id, strategy_id, candidate, now)
         result["scanned"] = len(candidates)
 
+        if should_fetch_books:
+            source = source or PolymarketRestSource()
+            for candidate in candidates:
+                if candidate.asset_id not in books:
+                    books[candidate.asset_id] = source.fetch_clob_order_book(candidate.asset_id)
+
         positions = load_positions(conn, deployment_id)
         exited_assets = _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, result)
         _process_entries(conn, deployment_id, positions, exited_assets, candidates, books, overrides, cfg, now, result)
@@ -71,6 +81,30 @@ def run_polymarket_cycle(
         raise
     finally:
         conn.close()
+
+
+def run_polymarket_loop(*, args, strategy: dict) -> None:
+    if getattr(args, "mode", "paper") != "paper":
+        raise RuntimeError("Polymarket bot supports paper mode only")
+
+    cfg = default_bot_config(strategy.get("bot_config", {}))
+    source = PolymarketRestSource()
+    while True:
+        now = source._now()
+        market_payload = source.fetch_gamma_markets(
+            limit=int(cfg.get("max_candidates", 20)),
+            sort_by=str(cfg.get("sort_by", "volume")),
+        )
+        run_polymarket_cycle(
+            db_path=args.db,
+            deployment_id=args.deploy_id,
+            strategy_id=args.strategy_id,
+            market_payload=market_payload,
+            order_books=None,
+            source=source,
+            now=now,
+        )
+        time.sleep(int(cfg.get("scan_interval_sec", 60)))
 
 
 def _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, result) -> set[str]:

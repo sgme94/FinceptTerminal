@@ -1,6 +1,8 @@
 import json
 import sqlite3
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 
@@ -11,6 +13,9 @@ if str(SCRIPT_DIR) not in sys.path:
 from polymarket_runner import run_polymarket_cycle
 from polymarket_sources import load_fixture
 from polymarket_store import ensure_polymarket_schema
+from backtest_engine import cmd_list_strategies, cmd_save_strategy
+from algo_live_runner import load_strategy, open_db_connection
+from algo_manager import cmd_list_deployments
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -81,6 +86,129 @@ def latest_trade_side(db):
     row = conn.execute("SELECT side FROM algo_polymarket_paper_trades ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
     return row[0] if row else None
+
+
+def seed_deployment(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS algo_deployments (
+            id TEXT PRIMARY KEY,
+            strategy_id TEXT,
+            symbol TEXT,
+            mode TEXT,
+            status TEXT,
+            timeframe TEXT,
+            quantity REAL,
+            error_message TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS algo_metrics (
+            deployment_id TEXT PRIMARY KEY,
+            total_pnl REAL,
+            unrealized_pnl REAL,
+            total_trades INTEGER,
+            win_rate REAL,
+            max_drawdown REAL,
+            current_position_qty REAL,
+            current_position_side TEXT,
+            current_position_entry REAL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO algo_deployments
+            (id, strategy_id, symbol, mode, status, timeframe, quantity, error_message, created_at, updated_at)
+        VALUES ('dep-1', 'strat-1', 'polymarket:auto', 'paper', 'running', 'live', 10, '', ?, ?)
+        """,
+        ("2026-04-30T00:00:00Z", "2026-04-30T00:00:00Z"),
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_strategy(db, bot_config=None):
+    payload = {
+        "id": "strat-1",
+        "name": "Polymarket paper bot",
+        "market_type": "polymarket",
+        "market_id": "",
+        "symbol": "",
+        "timeframe": "live",
+        "entry_conditions": [],
+        "exit_conditions": [],
+        "bot_config": bot_config or {},
+    }
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_save_strategy(payload, str(db))
+    return json.loads(out.getvalue())
+
+
+def list_strategies(db):
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_list_strategies(str(db))
+    return json.loads(out.getvalue())["strategies"]
+
+
+def list_deployments(db):
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_list_deployments(str(db))
+    return json.loads(out.getvalue())["deployments"]
+
+
+def test_strategy_save_and_list_preserves_bot_config(tmp_path):
+    db = tmp_path / "fincept.db"
+
+    result = save_strategy(db, bot_config={"max_candidates": 3, "min_edge": 0.02})
+    strategies = list_strategies(db)
+
+    assert result["success"] is True
+    assert strategies[0]["market_type"] == "polymarket"
+    assert strategies[0]["bot_config"]["max_candidates"] == 3
+    assert strategies[0]["bot_config"]["min_edge"] == 0.02
+
+
+def test_live_runner_load_strategy_returns_polymarket_config(tmp_path):
+    db = tmp_path / "fincept.db"
+    save_strategy(db, bot_config={"max_candidates": 3})
+    conn = open_db_connection(str(db))
+
+    strategy = load_strategy(conn, "strat-1")
+    conn.close()
+
+    assert strategy["market_type"] == "polymarket"
+    assert strategy["bot_config"]["max_candidates"] == 3
+
+
+def test_algo_manager_lists_polymarket_summary(tmp_path):
+    db = tmp_path / "fincept.db"
+    save_strategy(db, bot_config={"max_candidates": 2, "min_edge": 0.01})
+    seed_deployment(db)
+    run_polymarket_cycle(
+        db_path=str(db),
+        deployment_id="dep-1",
+        strategy_id="strat-1",
+        market_payload=gamma_fixture(),
+        order_books={"yes-token-1": book_fixture()},
+        now="2026-04-30T00:00:00Z",
+    )
+
+    deployment = list_deployments(db)[0]
+
+    assert deployment["poly_candidate_count"] >= 1
+    assert deployment["poly_signal_count"] >= 1
+    assert deployment["poly_position_count"] >= 1
+    assert deployment["poly_latest_signal"] == "buy"
+    assert deployment["poly_bot_state"] == "scanning"
 
 
 def test_runner_one_cycle_writes_signal_and_paper_fill(tmp_path):
