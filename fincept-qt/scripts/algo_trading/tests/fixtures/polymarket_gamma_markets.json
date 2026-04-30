@@ -1,0 +1,36 @@
+{
+  "source_api": "https://gamma-api.polymarket.com",
+  "fetched_at": "2026-04-30T00:00:00Z",
+  "data": [
+    {
+      "id": "market-1",
+      "conditionId": "condition-1",
+      "question": "Will the test event happen?",
+      "active": true,
+      "closed": false,
+      "volume": 2500,
+      "liquidity": 1200,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.42\", \"0.58\"]",
+      "clobTokenIds": "[\"yes-token-1\", \"no-token-1\"]",
+      "tags": ["politics"],
+      "category": "news"
+    },
+    {
+      "id": "market-closed",
+      "conditionId": "condition-closed",
+      "question": "Closed fixture market",
+      "active": false,
+      "closed": true,
+      "volume": 5000,
+      "liquidity": 3000,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.50\", \"0.50\"]",
+      "clobTokenIds": "[\"closed-yes\", \"closed-no\"]",
+      "tags": [],
+      "category": "news"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "source_api": "https://clob.polymarket.com",
+  "fetched_at": "2026-04-29T23:00:00Z",
+  "data": {
+    "asset_id": "yes-token-1",
+    "bids": [
+      {"price": "0.40", "size": "100"}
+    ],
+    "asks": [
+      {"price": "0.42", "size": "80"}
+    ]
+  }
+}
