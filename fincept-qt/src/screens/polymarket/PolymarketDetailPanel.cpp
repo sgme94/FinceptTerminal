@@ -206,6 +206,26 @@ QWidget* PolymarketDetailPanel::create_overview_page() {
 
     vl->addSpacing(14);
 
+    bot_observation_container_ = new QWidget;
+    bot_observation_container_->setStyleSheet(
+        QString("background: %1; border: 1px solid %2;")
+            .arg(colors::BG_SURFACE(), colors::BORDER_DIM()));
+    auto* bot_vl = new QVBoxLayout(bot_observation_container_);
+    bot_vl->setContentsMargins(10, 8, 10, 8);
+    bot_vl->setSpacing(5);
+    auto* bot_title = new QLabel("PAPER BOT");
+    bot_title->setStyleSheet(
+        QString("color: %1; font-size: 8px; font-weight: 700; letter-spacing: 0.8px; background: transparent;")
+            .arg(colors::TEXT_SECONDARY()));
+    bot_vl->addWidget(bot_title);
+    bot_observation_layout_ = new QVBoxLayout;
+    bot_observation_layout_->setContentsMargins(0, 0, 0, 0);
+    bot_observation_layout_->setSpacing(4);
+    bot_vl->addLayout(bot_observation_layout_);
+    vl->addWidget(bot_observation_container_);
+
+    vl->addSpacing(14);
+
     // ── Description ───────────────────────────────────────────────────────
     description_label_ = new QLabel;
     description_label_->setStyleSheet(
@@ -218,6 +238,75 @@ QWidget* PolymarketDetailPanel::create_overview_page() {
     vl->addStretch(1);
     scroll->setWidget(page);
     return scroll;
+}
+
+void PolymarketDetailPanel::set_bot_observation(const QVariantMap& observation) {
+    if (!bot_observation_layout_)
+        return;
+    while (auto* item = bot_observation_layout_->takeAt(0)) {
+        if (auto* widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    auto add_line = [this](const QString& text, const QString& color) {
+        auto* label = new QLabel(text, bot_observation_container_);
+        label->setWordWrap(true);
+        label->setStyleSheet(QString("color: %1; font-size: 10px; background: transparent; border: none;")
+                                 .arg(color));
+        bot_observation_layout_->addWidget(label);
+    };
+
+    if (!observation.value("tracked").toBool()) {
+        add_line("Not tracked by paper bot", colors::TEXT_DIM());
+        return;
+    }
+
+    const auto signals = observation.value("outcome_signals").toList();
+    for (const auto& value : signals) {
+        const auto s = value.toMap();
+        add_line(QString("%1 %2 price %3 prob %4 edge %5")
+                     .arg(s.value("outcome").toString(),
+                          s.value("latest_signal").toString().toUpper(),
+                          QString::number(s.value("price").toDouble(), 'f', 3),
+                          QString::number(s.value("estimated_probability").toDouble(), 'f', 3),
+                          QString::number(s.value("edge").toDouble(), 'f', 3)),
+                 colors::TEXT_PRIMARY());
+    }
+
+    const auto positions = observation.value("positions").toList();
+    if (!positions.isEmpty()) {
+        QStringList lines;
+        for (const auto& value : positions) {
+            const auto p = value.toMap();
+            lines.append(QString("%1 size %2 avg %3")
+                             .arg(p.value("outcome").toString())
+                             .arg(p.value("size").toDouble(), 0, 'f', 2)
+                             .arg(p.value("avg_price").toDouble(), 0, 'f', 3));
+        }
+        add_line("Positions: " + lines.join("; "), colors::TEXT_PRIMARY());
+    }
+
+    const auto trades = observation.value("recent_trades").toList();
+    if (!trades.isEmpty()) {
+        QStringList lines;
+        for (const auto& value : trades) {
+            const auto t = value.toMap();
+            lines.append(QString("%1 %2 @ %3")
+                             .arg(t.value("side").toString(),
+                                  t.value("outcome").toString(),
+                                  QString::number(t.value("price").toDouble(), 'f', 3)));
+        }
+        add_line("Recent fills: " + lines.join("; "), colors::TEXT_PRIMARY());
+    }
+
+    const auto freshness = observation.value("freshness").toMap();
+    add_line(QString("Freshness: signal %1, book %2")
+                 .arg(freshness.value("last_signal_update").toString(),
+                      freshness.value("last_orderbook_update").toString()),
+             colors::TEXT_SECONDARY());
+    add_line("Sources: " + observation.value("source_labels").toStringList().join(", "),
+             colors::TEXT_SECONDARY());
 }
 
 QWidget* PolymarketDetailPanel::create_trade_page() {
@@ -897,6 +986,7 @@ void PolymarketDetailPanel::clear() {
     oi_label_->setText("—");
     status_label_->clear();
     description_label_->clear();
+    set_bot_observation({});
     orderbook_->clear();
     activity_feed_->clear();
 
