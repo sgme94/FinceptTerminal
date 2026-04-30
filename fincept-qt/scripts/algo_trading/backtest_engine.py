@@ -538,6 +538,7 @@ def ensure_algo_strategies_schema(conn):
             exit_conditions TEXT DEFAULT '[]',
             entry_logic TEXT DEFAULT 'AND',
             exit_logic TEXT DEFAULT 'AND',
+            bot_config TEXT DEFAULT '{}',
             stop_loss REAL DEFAULT 0,
             take_profit REAL DEFAULT 0,
             trailing_stop REAL DEFAULT 0,
@@ -555,6 +556,7 @@ def ensure_algo_strategies_schema(conn):
         ('market_type', "TEXT DEFAULT 'equity'"),
         ('market_id', "TEXT DEFAULT ''"),
         ('symbol', "TEXT DEFAULT ''"),
+        ('bot_config', "TEXT DEFAULT '{}'"),
     ):
         if column not in existing_columns:
             conn.execute(f"ALTER TABLE algo_strategies ADD COLUMN {column} {definition}")
@@ -569,8 +571,8 @@ def cmd_save_strategy(params: dict, db_path: str):
             INSERT INTO algo_strategies
                 (id, name, description, market_type, market_id, symbol, timeframe,
                  entry_conditions, exit_conditions, entry_logic, exit_logic,
-                 stop_loss, take_profit, trailing_stop, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                 bot_config, stop_loss, take_profit, trailing_stop, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
@@ -582,6 +584,7 @@ def cmd_save_strategy(params: dict, db_path: str):
                 exit_conditions = excluded.exit_conditions,
                 entry_logic = excluded.entry_logic,
                 exit_logic = excluded.exit_logic,
+                bot_config = excluded.bot_config,
                 stop_loss = excluded.stop_loss,
                 take_profit = excluded.take_profit,
                 trailing_stop = excluded.trailing_stop,
@@ -598,6 +601,7 @@ def cmd_save_strategy(params: dict, db_path: str):
             json.dumps(params.get('exit_conditions', [])),
             params.get('entry_logic', 'AND'),
             params.get('exit_logic', 'AND'),
+            json.dumps(params.get('bot_config', {})),
             params.get('stop_loss', 0),
             params.get('take_profit', 0),
             params.get('trailing_stop', 0),
@@ -617,7 +621,7 @@ def cmd_list_strategies(db_path: str):
         rows = conn.execute("""
             SELECT id, name, description, market_type, market_id, symbol, timeframe,
                    entry_conditions, exit_conditions, entry_logic, exit_logic,
-                   stop_loss, take_profit, trailing_stop,
+                   bot_config, stop_loss, take_profit, trailing_stop,
                    is_active, created_at, updated_at
             FROM algo_strategies
             WHERE is_active = 1
@@ -636,6 +640,10 @@ def cmd_list_strategies(db_path: str):
                 s['exit_conditions'] = json.loads(s['exit_conditions'] or '[]')
             except Exception:
                 s['exit_conditions'] = []
+            try:
+                s['bot_config'] = json.loads(s.get('bot_config') or '{}')
+            except Exception:
+                s['bot_config'] = {}
             strategies.append(s)
         print(json.dumps({'success': True, 'strategies': strategies}))
     except sqlite3.OperationalError as e:

@@ -122,6 +122,7 @@ class PolymarketScreen : public QWidget, public fincept::screens::IStatefulScree
     void install_presentation(const screens::polymarket::ExchangePresentation& p);
     void load_current_view();
     void select_market(const fincept::services::prediction::PredictionMarket& market);
+    QVariantMap load_bot_observation(const fincept::services::prediction::PredictionMarket& market) const;
     void subscribe_to_market(const fincept::services::prediction::PredictionMarket& market);
     void unsubscribe_current();
 

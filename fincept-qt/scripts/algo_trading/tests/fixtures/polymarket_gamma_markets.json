@@ -1,0 +1,81 @@
+{
+  "source_api": "https://gamma-api.polymarket.com",
+  "fetched_at": "2026-04-30T00:00:00Z",
+  "data": [
+    {
+      "id": "market-1",
+      "conditionId": "condition-1",
+      "question": "Will the test event happen?",
+      "active": true,
+      "closed": false,
+      "volume": 2500,
+      "liquidity": 1200,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.42\", \"0.58\"]",
+      "clobTokenIds": "[\"yes-token-1\", \"no-token-1\"]",
+      "tags": ["politics"],
+      "category": "news"
+    },
+    {
+      "id": "market-closed",
+      "conditionId": "condition-closed",
+      "question": "Closed fixture market",
+      "active": false,
+      "closed": true,
+      "volume": 2000,
+      "liquidity": 3000,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.50\", \"0.50\"]",
+      "clobTokenIds": "[\"closed-yes\", \"closed-no\"]",
+      "tags": [],
+      "category": "news"
+    },
+    {
+      "id": "market-low-liquidity",
+      "conditionId": "condition-low-liquidity",
+      "question": "Low liquidity fixture market",
+      "active": true,
+      "closed": false,
+      "volume": 5000,
+      "liquidity": 100,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.50\", \"0.50\"]",
+      "clobTokenIds": "[\"low-liq-yes\", \"low-liq-no\"]",
+      "tags": [],
+      "category": "news"
+    },
+    {
+      "id": "market-sports",
+      "conditionId": "condition-sports",
+      "question": "Sports fixture market",
+      "active": true,
+      "closed": false,
+      "volume": 2000,
+      "liquidity": 3000,
+      "endDate": "2026-05-10T00:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.50\", \"0.50\"]",
+      "clobTokenIds": "[\"sports-yes\", \"sports-no\"]",
+      "tags": ["sports"],
+      "category": "news"
+    },
+    {
+      "id": "market-near-expiry",
+      "conditionId": "condition-near-expiry",
+      "question": "Near expiry fixture market",
+      "active": true,
+      "closed": false,
+      "volume": 5000,
+      "liquidity": 3000,
+      "endDate": "2026-04-30T12:00:00Z",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "outcomePrices": "[\"0.50\", \"0.50\"]",
+      "clobTokenIds": "[\"near-expiry-yes\", \"near-expiry-no\"]",
+      "tags": [],
+      "category": "news"
+    }
+  ]
+}

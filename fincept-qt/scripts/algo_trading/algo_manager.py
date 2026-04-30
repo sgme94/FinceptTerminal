@@ -44,12 +44,18 @@ def cmd_list_deployments(db_path: str):
     """Return all deployments with their live metrics."""
     try:
         conn = open_db(db_path)
+        try:
+            from polymarket_store import ensure_polymarket_schema
+            ensure_polymarket_schema(conn)
+        except Exception:
+            pass
         rows = conn.execute("""
             SELECT
                 d.id, d.strategy_id, d.symbol, d.mode, d.status,
                 d.timeframe, d.quantity, d.error_message,
                 d.created_at, d.updated_at,
                 s.name AS strategy_name,
+                s.market_type AS market_type,
                 COALESCE(m.total_pnl, 0)                AS total_pnl,
                 COALESCE(m.unrealized_pnl, 0)           AS unrealized_pnl,
                 COALESCE(m.total_trades, 0)              AS total_trades,
@@ -57,7 +63,43 @@ def cmd_list_deployments(db_path: str):
                 COALESCE(m.max_drawdown, 0)              AS max_drawdown,
                 COALESCE(m.current_position_qty, 0)      AS current_position_qty,
                 COALESCE(m.current_position_side, '')    AS current_position_side,
-                COALESCE(m.current_position_entry, 0)    AS current_position_entry
+                COALESCE(m.current_position_entry, 0)    AS current_position_entry,
+                COALESCE((SELECT COUNT(*) FROM algo_polymarket_candidates pc WHERE pc.deployment_id = d.id), 0)
+                    AS poly_candidate_count,
+                COALESCE((SELECT COUNT(*) FROM algo_polymarket_signals ps WHERE ps.deployment_id = d.id), 0)
+                    AS poly_signal_count,
+                COALESCE((SELECT COUNT(*) FROM algo_polymarket_skips pk WHERE pk.deployment_id = d.id), 0)
+                    AS poly_skipped_count,
+                COALESCE((SELECT COUNT(*) FROM algo_polymarket_paper_positions pp WHERE pp.deployment_id = d.id), 0)
+                    AS poly_position_count,
+                COALESCE((SELECT action FROM algo_polymarket_signals ps WHERE ps.deployment_id = d.id ORDER BY id DESC LIMIT 1), '')
+                    AS poly_latest_signal,
+                CASE WHEN s.market_type = 'polymarket' AND d.status = 'running' THEN 'scanning' ELSE d.status END
+                    AS poly_bot_state,
+                COALESCE((SELECT COUNT(*) FROM algo_polymarket_candidates pc WHERE pc.deployment_id = d.id), 0)
+                    AS poly_scanned_count,
+                COALESCE((SELECT SUM(realized_pnl) FROM algo_polymarket_paper_trades pt WHERE pt.deployment_id = d.id), 0)
+                    AS poly_realized_pnl,
+                0 AS poly_unrealized_pnl,
+                COALESCE((SELECT group_concat(reason, ', ') FROM (
+                    SELECT reason FROM algo_polymarket_skips pk
+                    WHERE pk.deployment_id = d.id
+                    GROUP BY reason
+                    ORDER BY COUNT(*) DESC
+                    LIMIT 3
+                )), '') AS poly_top_skipped_reasons,
+                COALESCE((SELECT group_concat(side || ' ' || size || '@' || price, '; ') FROM (
+                    SELECT side, size, price FROM algo_polymarket_paper_trades pt
+                    WHERE pt.deployment_id = d.id
+                    ORDER BY id DESC
+                    LIMIT 3
+                )), '') AS poly_recent_fills,
+                COALESCE((SELECT asset_id || ' ' || action || ' edge=' || edge || ' reason=' || COALESCE(reason, '')
+                    FROM algo_polymarket_signals ps
+                    WHERE ps.deployment_id = d.id
+                    ORDER BY id DESC
+                    LIMIT 1
+                ), '') AS poly_latest_signal_details
             FROM algo_deployments d
             LEFT JOIN algo_strategies s ON s.id = d.strategy_id
             LEFT JOIN algo_metrics m ON m.deployment_id = d.id

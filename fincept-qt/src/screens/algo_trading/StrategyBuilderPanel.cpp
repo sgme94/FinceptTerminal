@@ -102,6 +102,30 @@ static QJsonArray gather_from_layout(QVBoxLayout* layout) {
     return arr;
 }
 
+static QJsonArray split_csv_to_json(const QString& text) {
+    QJsonArray arr;
+    for (const auto& part : text.split(',', Qt::SkipEmptyParts)) {
+        const QString trimmed = part.trimmed();
+        if (!trimmed.isEmpty())
+            arr.append(trimmed);
+    }
+    return arr;
+}
+
+static QString join_json_strings(const QJsonArray& arr) {
+    QStringList values;
+    for (const auto& value : arr) {
+        const QString text = value.toString().trimmed();
+        if (!text.isEmpty())
+            values.append(text);
+    }
+    return values.join(", ");
+}
+
+static double json_number(const QJsonObject& obj, const QString& key, double fallback) {
+    return obj.contains(key) ? obj.value(key).toDouble(fallback) : fallback;
+}
+
 // ── Constructor ─────────────────────────────────────────────────────────────
 
 StrategyBuilderPanel::StrategyBuilderPanel(QWidget* parent) : QWidget(parent) {
@@ -298,6 +322,122 @@ QWidget* StrategyBuilderPanel::build_left_pane() {
 
     connect(market_type_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { sync_market_type_ui(); });
+
+    polymarket_config_widget_ = new QWidget(content);
+    polymarket_config_widget_->setStyleSheet(QString("background: %1; border: 1px solid %2;")
+                                                 .arg(fincept::ui::colors::BG_SURFACE(),
+                                                      fincept::ui::colors::BORDER_DIM()));
+    auto* poly_vl = new QVBoxLayout(polymarket_config_widget_);
+    poly_vl->setContentsMargins(8, 8, 8, 8);
+    poly_vl->setSpacing(6);
+
+    auto* poly_title = new QLabel("POLYMARKET PAPER BOT", polymarket_config_widget_);
+    poly_title->setStyleSheet(kSectionLabel());
+    poly_vl->addWidget(poly_title);
+
+    auto* poly_grid_widget = new QWidget(polymarket_config_widget_);
+    auto* poly_grid = new QGridLayout(poly_grid_widget);
+    poly_grid->setContentsMargins(0, 0, 0, 0);
+    poly_grid->setHorizontalSpacing(8);
+    poly_grid->setVerticalSpacing(6);
+    int poly_row = 0;
+
+    auto add_poly_label = [&](const QString& label, QWidget* input) {
+        auto* lbl = new QLabel(label, poly_grid_widget);
+        lbl->setStyleSheet(kLabelStyle());
+        poly_grid->addWidget(lbl, poly_row, 0);
+        poly_grid->addWidget(input, poly_row, 1);
+        ++poly_row;
+    };
+    auto make_poly_spin = [&](double min, double max, double value, int decimals = 2) {
+        auto* spin = new QDoubleSpinBox(poly_grid_widget);
+        spin->setStyleSheet(kSpinStyle());
+        spin->setFixedHeight(28);
+        spin->setRange(min, max);
+        spin->setDecimals(decimals);
+        spin->setValue(value);
+        return spin;
+    };
+
+    poly_strategy_mode_combo_ = new QComboBox(poly_grid_widget);
+    poly_strategy_mode_combo_->addItem("Auto Scan", "auto_scan");
+    poly_strategy_mode_combo_->setStyleSheet(kComboStyle());
+    poly_strategy_mode_combo_->setFixedHeight(28);
+    add_poly_label("STRATEGY MODE", poly_strategy_mode_combo_);
+
+    poly_scan_interval_spin_ = make_poly_spin(5, 3600, 60, 0);
+    add_poly_label("SCAN INTERVAL SEC", poly_scan_interval_spin_);
+    poly_max_candidates_spin_ = make_poly_spin(1, 200, 20, 0);
+    add_poly_label("MAX CANDIDATES", poly_max_candidates_spin_);
+
+    poly_sort_by_combo_ = new QComboBox(poly_grid_widget);
+    poly_sort_by_combo_->addItem("Volume", "volume");
+    poly_sort_by_combo_->addItem("Liquidity", "liquidity");
+    poly_sort_by_combo_->addItem("Price", "price");
+    poly_sort_by_combo_->setStyleSheet(kComboStyle());
+    poly_sort_by_combo_->setFixedHeight(28);
+    add_poly_label("SORT BY", poly_sort_by_combo_);
+
+    poly_min_volume_spin_ = make_poly_spin(0, 100000000, 1000, 0);
+    add_poly_label("MIN VOLUME", poly_min_volume_spin_);
+    poly_min_liquidity_spin_ = make_poly_spin(0, 100000000, 500, 0);
+    add_poly_label("MIN LIQUIDITY", poly_min_liquidity_spin_);
+    poly_max_spread_spin_ = make_poly_spin(0, 1, 0.05, 4);
+    add_poly_label("MAX SPREAD", poly_max_spread_spin_);
+    poly_min_depth_spin_ = make_poly_spin(0, 1000000, 10, 2);
+    add_poly_label("MIN DEPTH", poly_min_depth_spin_);
+    poly_min_price_spin_ = make_poly_spin(0, 1, 0.05, 4);
+    add_poly_label("MIN PRICE", poly_min_price_spin_);
+    poly_max_price_spin_ = make_poly_spin(0, 1, 0.95, 4);
+    add_poly_label("MAX PRICE", poly_max_price_spin_);
+
+    poly_excluded_categories_edit_ = new QLineEdit(poly_grid_widget);
+    poly_excluded_categories_edit_->setStyleSheet(kInputStyle());
+    poly_excluded_categories_edit_->setFixedHeight(28);
+    add_poly_label("EXCLUDED CATEGORIES", poly_excluded_categories_edit_);
+    poly_excluded_tags_edit_ = new QLineEdit(poly_grid_widget);
+    poly_excluded_tags_edit_->setStyleSheet(kInputStyle());
+    poly_excluded_tags_edit_->setFixedHeight(28);
+    add_poly_label("EXCLUDED TAGS", poly_excluded_tags_edit_);
+
+    poly_min_expiry_spin_ = make_poly_spin(0, 8760, 24, 0);
+    add_poly_label("MIN EXPIRY HOURS", poly_min_expiry_spin_);
+    poly_min_edge_spin_ = make_poly_spin(0, 1, 0.04, 4);
+    add_poly_label("MIN EDGE", poly_min_edge_spin_);
+    poly_confidence_spin_ = make_poly_spin(0, 1, 0.55, 4);
+    add_poly_label("CONFIDENCE", poly_confidence_spin_);
+    poly_momentum_weight_spin_ = make_poly_spin(0, 1, 0.20, 4);
+    add_poly_label("MOMENTUM WEIGHT", poly_momentum_weight_spin_);
+    poly_volatility_penalty_spin_ = make_poly_spin(0, 1, 0.15, 4);
+    add_poly_label("VOL PENALTY", poly_volatility_penalty_spin_);
+    poly_imbalance_weight_spin_ = make_poly_spin(0, 1, 0.20, 4);
+    add_poly_label("IMBALANCE WEIGHT", poly_imbalance_weight_spin_);
+    poly_liquidity_weight_spin_ = make_poly_spin(0, 1, 0.10, 4);
+    add_poly_label("LIQUIDITY WEIGHT", poly_liquidity_weight_spin_);
+    poly_spread_penalty_spin_ = make_poly_spin(0, 1, 0.20, 4);
+    add_poly_label("SPREAD PENALTY", poly_spread_penalty_spin_);
+
+    poly_order_size_spin_ = make_poly_spin(0, 1000000, 10, 2);
+    add_poly_label("PAPER ORDER SIZE", poly_order_size_spin_);
+    poly_max_order_spin_ = make_poly_spin(0, 1000000, 25, 2);
+    add_poly_label("MAX ORDER USDC", poly_max_order_spin_);
+    poly_max_exposure_spin_ = make_poly_spin(0, 1000000, 100, 2);
+    add_poly_label("MAX EXPOSURE", poly_max_exposure_spin_);
+    poly_daily_loss_spin_ = make_poly_spin(0, 1000000, 25, 2);
+    add_poly_label("DAILY LOSS LIMIT", poly_daily_loss_spin_);
+    poly_max_positions_spin_ = make_poly_spin(1, 1000, 5, 0);
+    add_poly_label("MAX POSITIONS", poly_max_positions_spin_);
+    poly_cooldown_spin_ = make_poly_spin(0, 1440, 10, 0);
+    add_poly_label("COOLDOWN MIN", poly_cooldown_spin_);
+    poly_stop_loss_spin_ = make_poly_spin(0, 100, 30, 2);
+    add_poly_label("STOP LOSS %", poly_stop_loss_spin_);
+    poly_take_profit_spin_ = make_poly_spin(0, 100, 50, 2);
+    add_poly_label("TAKE PROFIT %", poly_take_profit_spin_);
+    poly_trailing_stop_spin_ = make_poly_spin(0, 100, 0, 2);
+    add_poly_label("TRAILING STOP %", poly_trailing_stop_spin_);
+
+    poly_vl->addWidget(poly_grid_widget);
+    vl->addWidget(polymarket_config_widget_);
 
     // ── Entry Conditions ────────────────────────────────────────────────────
     auto* entry_hdr = new QWidget(content);
@@ -698,11 +838,85 @@ void StrategyBuilderPanel::sync_market_type_ui() {
         const int idx = options.indexOf(current);
         timeframe_combo_->setCurrentIndex(idx >= 0 ? idx : (is_polymarket ? options.indexOf("1d") : 0));
     }
+    if (polymarket_config_widget_)
+        polymarket_config_widget_->setVisible(is_polymarket);
 }
 
 void StrategyBuilderPanel::clear_results() {
     bt_empty_label_->setVisible(true);
     kpi_grid_widget_->setVisible(false);
+}
+
+QJsonObject StrategyBuilderPanel::gather_polymarket_bot_config() const {
+    QJsonObject cfg;
+    cfg["strategy_mode"] = poly_strategy_mode_combo_->currentData().toString();
+    cfg["scan_interval_sec"] = static_cast<int>(poly_scan_interval_spin_->value());
+    cfg["max_candidates"] = static_cast<int>(poly_max_candidates_spin_->value());
+    cfg["sort_by"] = poly_sort_by_combo_->currentData().toString();
+    cfg["min_volume"] = poly_min_volume_spin_->value();
+    cfg["min_liquidity"] = poly_min_liquidity_spin_->value();
+    cfg["max_spread"] = poly_max_spread_spin_->value();
+    cfg["min_depth"] = poly_min_depth_spin_->value();
+    cfg["min_price"] = poly_min_price_spin_->value();
+    cfg["max_price"] = poly_max_price_spin_->value();
+    cfg["excluded_categories"] = split_csv_to_json(poly_excluded_categories_edit_->text());
+    cfg["excluded_tags"] = split_csv_to_json(poly_excluded_tags_edit_->text());
+    cfg["min_time_to_expiry_hours"] = static_cast<int>(poly_min_expiry_spin_->value());
+    cfg["freshness_ttl_sec"] = 30;
+    cfg["min_edge"] = poly_min_edge_spin_->value();
+    cfg["confidence_threshold"] = poly_confidence_spin_->value();
+    cfg["momentum_weight"] = poly_momentum_weight_spin_->value();
+    cfg["volatility_penalty"] = poly_volatility_penalty_spin_->value();
+    cfg["imbalance_weight"] = poly_imbalance_weight_spin_->value();
+    cfg["liquidity_weight"] = poly_liquidity_weight_spin_->value();
+    cfg["spread_penalty"] = poly_spread_penalty_spin_->value();
+    cfg["paper_order_size"] = poly_order_size_spin_->value();
+    cfg["max_order_usdc"] = poly_max_order_spin_->value();
+    cfg["max_total_exposure"] = poly_max_exposure_spin_->value();
+    cfg["daily_loss_limit"] = poly_daily_loss_spin_->value();
+    cfg["max_positions"] = static_cast<int>(poly_max_positions_spin_->value());
+    cfg["cooldown_minutes"] = static_cast<int>(poly_cooldown_spin_->value());
+    cfg["stop_loss_pct"] = poly_stop_loss_spin_->value();
+    cfg["take_profit_pct"] = poly_take_profit_spin_->value();
+    cfg["trailing_stop_pct"] = poly_trailing_stop_spin_->value();
+    return cfg;
+}
+
+void StrategyBuilderPanel::load_polymarket_bot_config(const QJsonObject& cfg) {
+    auto set_combo = [](QComboBox* combo, const QString& value) {
+        const int idx = combo->findData(value);
+        combo->setCurrentIndex(idx >= 0 ? idx : 0);
+    };
+
+    set_combo(poly_strategy_mode_combo_, cfg.value("strategy_mode").toString("auto_scan"));
+    poly_scan_interval_spin_->setValue(json_number(cfg, "scan_interval_sec", 60));
+    poly_max_candidates_spin_->setValue(json_number(cfg, "max_candidates", 20));
+    set_combo(poly_sort_by_combo_, cfg.value("sort_by").toString("volume"));
+    poly_min_volume_spin_->setValue(json_number(cfg, "min_volume", 1000.0));
+    poly_min_liquidity_spin_->setValue(json_number(cfg, "min_liquidity", 500.0));
+    poly_max_spread_spin_->setValue(json_number(cfg, "max_spread", 0.05));
+    poly_min_depth_spin_->setValue(json_number(cfg, "min_depth", 10.0));
+    poly_min_price_spin_->setValue(json_number(cfg, "min_price", 0.05));
+    poly_max_price_spin_->setValue(json_number(cfg, "max_price", 0.95));
+    poly_excluded_categories_edit_->setText(join_json_strings(cfg.value("excluded_categories").toArray()));
+    poly_excluded_tags_edit_->setText(join_json_strings(cfg.value("excluded_tags").toArray()));
+    poly_min_expiry_spin_->setValue(json_number(cfg, "min_time_to_expiry_hours", 24));
+    poly_min_edge_spin_->setValue(json_number(cfg, "min_edge", 0.04));
+    poly_confidence_spin_->setValue(json_number(cfg, "confidence_threshold", 0.55));
+    poly_momentum_weight_spin_->setValue(json_number(cfg, "momentum_weight", 0.20));
+    poly_volatility_penalty_spin_->setValue(json_number(cfg, "volatility_penalty", 0.15));
+    poly_imbalance_weight_spin_->setValue(json_number(cfg, "imbalance_weight", 0.20));
+    poly_liquidity_weight_spin_->setValue(json_number(cfg, "liquidity_weight", 0.10));
+    poly_spread_penalty_spin_->setValue(json_number(cfg, "spread_penalty", 0.20));
+    poly_order_size_spin_->setValue(json_number(cfg, "paper_order_size", 10.0));
+    poly_max_order_spin_->setValue(json_number(cfg, "max_order_usdc", 25.0));
+    poly_max_exposure_spin_->setValue(json_number(cfg, "max_total_exposure", 100.0));
+    poly_daily_loss_spin_->setValue(json_number(cfg, "daily_loss_limit", 25.0));
+    poly_max_positions_spin_->setValue(json_number(cfg, "max_positions", 5));
+    poly_cooldown_spin_->setValue(json_number(cfg, "cooldown_minutes", 10));
+    poly_stop_loss_spin_->setValue(json_number(cfg, "stop_loss_pct", 30.0));
+    poly_take_profit_spin_->setValue(json_number(cfg, "take_profit_pct", 50.0));
+    poly_trailing_stop_spin_->setValue(json_number(cfg, "trailing_stop_pct", 0.0));
 }
 
 void StrategyBuilderPanel::load_strategy(const AlgoStrategy& strategy) {
@@ -724,6 +938,7 @@ void StrategyBuilderPanel::load_strategy(const AlgoStrategy& strategy) {
     stop_loss_spin_->setValue(strategy.stop_loss);
     take_profit_spin_->setValue(strategy.take_profit);
     trailing_stop_spin_->setValue(strategy.trailing_stop);
+    load_polymarket_bot_config(strategy.bot_config);
     bt_symbol_->setText(strategy.symbol);
 
     auto load_conditions = [this](QVBoxLayout* layout, const QJsonArray& conditions) {
@@ -870,6 +1085,10 @@ void StrategyBuilderPanel::on_save() {
     strategy.stop_loss        = stop_loss_spin_->value();
     strategy.take_profit      = take_profit_spin_->value();
     strategy.trailing_stop    = trailing_stop_spin_->value();
+    if (strategy.market_type == "polymarket") {
+        strategy.bot_config = gather_polymarket_bot_config();
+        strategy.bot_config["strategy_mode"] = "auto_scan";
+    }
 
     status_label_->setText("Saving...");
     status_label_->setStyleSheet(
@@ -895,6 +1114,7 @@ void StrategyBuilderPanel::on_save() {
         json["stop_loss"]     = strategy.stop_loss;
         json["take_profit"]   = strategy.take_profit;
         json["trailing_stop"] = strategy.trailing_stop;
+        json["bot_config"]    = strategy.bot_config;
 
         QJsonArray entry_arr;
         for (const auto& c : strategy.entry_conditions) entry_arr.append(c);
@@ -963,6 +1183,8 @@ void StrategyBuilderPanel::on_backtest() {
     params["stop_loss"] = stop_loss_spin_->value();
     params["take_profit"] = take_profit_spin_->value();
     params["trailing_stop"] = trailing_stop_spin_->value();
+    if (market_type == "polymarket")
+        params["bot_config"] = gather_polymarket_bot_config();
     params["start_date"] = start_date;
     params["end_date"] = end_date;
     params["initial_capital"] = bt_capital_->value();

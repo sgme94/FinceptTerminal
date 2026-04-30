@@ -81,9 +81,13 @@ def open_db_connection(db_path: str):
 
 def load_strategy(conn, strategy_id: str) -> dict:
     """Load strategy conditions from algo_strategies table."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(algo_strategies)").fetchall()}
+    bot_config_expr = "bot_config" if "bot_config" in columns else "'{}' AS bot_config"
+    market_type_expr = "market_type" if "market_type" in columns else "'equity' AS market_type"
     row = conn.execute(
-        "SELECT entry_conditions, exit_conditions, entry_logic, exit_logic, "
-        "stop_loss, take_profit, trailing_stop, trailing_stop_type "
+        f"SELECT entry_conditions, exit_conditions, entry_logic, exit_logic, "
+        f"stop_loss, take_profit, trailing_stop, trailing_stop_type, "
+        f"{market_type_expr}, {bot_config_expr} "
         "FROM algo_strategies WHERE id = ?",
         (strategy_id,)
     ).fetchone()
@@ -100,6 +104,8 @@ def load_strategy(conn, strategy_id: str) -> dict:
         'take_profit': row[5],
         'trailing_stop': row[6],
         'trailing_stop_type': row[7],
+        'market_type': row[8],
+        'bot_config': json.loads(row[9] or '{}'),
     }
 
 
@@ -270,6 +276,17 @@ def main():
     log.info(f"Strategy loaded OK. Entry conditions: {json.dumps(strategy['entry_conditions'], indent=2)}")
     log.info(f"Exit conditions: {json.dumps(strategy['exit_conditions'], indent=2)}")
     log.info(f"Risk: SL={strategy.get('stop_loss')}, TP={strategy.get('take_profit')}, TS={strategy.get('trailing_stop')}")
+
+    if strategy.get('market_type') == 'polymarket':
+        if args.mode != 'paper':
+            update_deployment_status(conn, args.deploy_id, 'error', 'Polymarket bot supports paper mode only')
+            conn.close()
+            sys.exit(1)
+        update_deployment_status(conn, args.deploy_id, 'running')
+        from polymarket_runner import run_polymarket_loop
+        conn.close()
+        run_polymarket_loop(args=args, strategy=strategy)
+        return
 
     update_deployment_status(conn, args.deploy_id, 'running')
 
