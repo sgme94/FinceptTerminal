@@ -127,6 +127,9 @@ fincept-qt/scripts/agents/agents/
 .cache/
 fincept-qt/.cache/
 
+# ── Local git worktrees ──────────────────────────────────────
+.worktrees/
+
 # ── Exchange runtime cache ────────────────────────────────────
 fincept-qt/scripts/exchange/.cache/
 
