@@ -24,6 +24,7 @@ class DeploymentDashboard : public QWidget {
     void build_ui();
     void connect_service();
     QWidget* build_deployment_card(const fincept::services::algo::AlgoDeployment& d, QWidget* parent);
+    QWidget* build_polymarket_summary(const fincept::services::algo::AlgoDeployment& d, QWidget* parent);
     void update_summary(const QVector<fincept::services::algo::AlgoDeployment>& deployments);
 
     // Summary stats

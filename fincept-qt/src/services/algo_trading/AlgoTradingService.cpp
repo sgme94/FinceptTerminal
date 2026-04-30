@@ -186,6 +186,7 @@ static QVector<AlgoDeployment> parse_deployments(const QJsonArray& arr) {
         d.id = o["id"].toString();
         d.strategy_id = o["strategy_id"].toString();
         d.strategy_name = o["strategy_name"].toString();
+        d.market_type = o["market_type"].toString();
         d.symbol = o["symbol"].toString();
         d.mode = o["mode"].toString();
         d.status = o["status"].toString();
