@@ -187,7 +187,8 @@ describe("terminal api client", () => {
 
     expect(status.source).toBe("mock");
     expect(status.stale).toBe(true);
-    expect(status.mode).toBe("advisory");
+    expect(status.mode).toBe("paper");
+    expect(status.liveEnabled).toBe(false);
   });
 
   it("aggregates terminal snapshot from existing backend api endpoints", async () => {

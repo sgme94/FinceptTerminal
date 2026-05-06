@@ -15,11 +15,12 @@ export const mockBotStatus: BotStatus = {
   stale: true,
   deploymentId: "mock-deploy-001",
   state: "paused",
-  mode: "advisory",
+  mode: "paper",
   lastHeartbeat: "2026-05-06T10:30:00.000Z",
   activeMarkets: 3,
   pendingProposals: 2,
-  exposureUsd: 1280
+  exposureUsd: 1280,
+  liveEnabled: false
 };
 
 export const mockMarketCandidates: MarketCandidate[] = [
@@ -101,6 +102,82 @@ export const mockAuditEvents: AuditEvent[] = [
     message: "API unavailable; terminal is displaying mock fallback data.",
     actor: "system",
     createdAt: "2026-05-06T10:30:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-start",
+    deploymentId: "mock-deploy-001",
+    level: "info",
+    message: "Paper bot start requested.",
+    actor: "user",
+    action: "start",
+    result: "accepted",
+    createdAt: "2026-05-06T10:20:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-stop",
+    deploymentId: "mock-deploy-001",
+    level: "warning",
+    message: "Paper bot stop requested.",
+    actor: "user",
+    action: "stop",
+    result: "accepted",
+    createdAt: "2026-05-06T10:21:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-approve",
+    deploymentId: "mock-deploy-001",
+    level: "info",
+    message: "Proposal approved for paper tracking.",
+    actor: "user",
+    action: "approve",
+    result: "approved",
+    before: { status: "proposed" },
+    after: { status: "approved" },
+    createdAt: "2026-05-06T10:22:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-reject",
+    deploymentId: "mock-deploy-001",
+    level: "info",
+    message: "Proposal rejected before paper tracking.",
+    actor: "user",
+    action: "reject",
+    result: "rejected",
+    before: { status: "proposed" },
+    after: { status: "rejected" },
+    createdAt: "2026-05-06T10:23:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-skip-001",
+    deploymentId: "mock-deploy-001",
+    level: "info",
+    message: "Skipped order placement because live trading is disabled.",
+    actor: "agent",
+    action: "skip",
+    result: "skipped",
+    createdAt: "2026-05-06T10:24:00.000Z"
+  },
+  {
+    source: "mock",
+    stale: true,
+    id: "audit-fill-001",
+    deploymentId: "mock-deploy-001",
+    level: "info",
+    message: "Paper fill simulated for mock proposal.",
+    actor: "agent",
+    action: "fill_simulated",
+    result: "filled",
+    createdAt: "2026-05-06T10:25:00.000Z"
   }
 ];
 

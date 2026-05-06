@@ -12,6 +12,8 @@ import { IconRail } from "./IconRail";
 import { MarketTickerTape } from "./MarketTickerTape";
 import { MobileDrawer } from "./MobileDrawer";
 import { RightRail } from "./RightRail";
+import { AuditPage } from "../../pages/AuditPage";
+import { OverviewPage } from "../../pages/OverviewPage";
 
 function findRoute(routes: TerminalRoute[], routeId: TerminalRouteId) {
   return routes.find((route) => route.id === routeId) ?? routes[0];
@@ -19,6 +21,24 @@ function findRoute(routes: TerminalRoute[], routeId: TerminalRouteId) {
 
 function findPrimaryRouteByKey(routes: PrimaryRoute[], key: string) {
   return routes.find((route) => route.functionKey === key);
+}
+
+function renderRoute(activeRoute: TerminalRoute) {
+  if (activeRoute.id === "overview") {
+    return <OverviewPage />;
+  }
+
+  if (activeRoute.id === "audit") {
+    return <AuditPage />;
+  }
+
+  return (
+    <section className="workspace-panel">
+      <p className="workspace-kicker">Workspace</p>
+      <h1>{activeRoute.label}</h1>
+      <p>{activeRoute.label} static route placeholder.</p>
+    </section>
+  );
 }
 
 export function TerminalShell() {
@@ -65,11 +85,7 @@ export function TerminalShell() {
           onSelectRoute={setActiveRouteId}
         />
         <main className="workspace" aria-label="Main workspace">
-          <section className="workspace-panel">
-            <p className="workspace-kicker">Workspace</p>
-            <h1>{activeRoute.label}</h1>
-            <p>{activeRoute.label} static route placeholder.</p>
-          </section>
+          {renderRoute(activeRoute)}
         </main>
         <RightRail />
       </div>

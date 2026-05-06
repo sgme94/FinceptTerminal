@@ -156,6 +156,143 @@
   letter-spacing: 0;
 }
 
+.page-stack {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.page-header,
+.status-row,
+.filter-row,
+.tab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-header {
+  justify-content: space-between;
+}
+
+.status-row {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.metric-grid,
+.page-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.page-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metric-cell,
+.page-section {
+  border: 1px solid var(--terminal-border);
+  padding: 12px;
+}
+
+.metric-cell {
+  display: grid;
+  gap: 5px;
+}
+
+.metric-cell span,
+.metric-cell small,
+.page-warning,
+.filter-row label,
+.audit-event-list span,
+.audit-event-list small {
+  color: var(--terminal-muted);
+  font-size: 12px;
+}
+
+.metric-cell strong {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.page-section h2 {
+  margin: 0 0 10px;
+  color: var(--terminal-accent);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.page-warning {
+  margin: 0;
+  border: 1px solid var(--terminal-border);
+  padding: 10px 12px;
+}
+
+.filter-row {
+  flex-wrap: wrap;
+}
+
+.filter-row label {
+  display: grid;
+  gap: 5px;
+  min-width: 170px;
+}
+
+.filter-row input,
+.filter-row select,
+.tab-row button {
+  min-height: 32px;
+  border: 1px solid var(--terminal-border);
+  background: #11100f;
+  color: var(--terminal-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.filter-row input,
+.filter-row select {
+  padding: 0 8px;
+}
+
+.audit-event-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-event-list li {
+  display: grid;
+  grid-template-columns: 190px 92px 92px minmax(0, 1fr) 150px;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--terminal-border);
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.audit-event-list strong {
+  color: var(--terminal-accent);
+  font-weight: 500;
+}
+
+.tab-row button {
+  min-width: 96px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.tab-row button[aria-selected="true"] {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+
 .right-rail {
   border-left: 1px solid var(--terminal-border);
   border-right: 0;
@@ -341,5 +478,16 @@
 
   .workspace {
     padding: 12px;
+  }
+
+  .page-header,
+  .metric-grid,
+  .page-grid,
+  .audit-event-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    align-items: flex-start;
   }
 }
