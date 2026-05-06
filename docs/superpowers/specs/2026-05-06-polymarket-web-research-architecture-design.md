@@ -132,6 +132,43 @@ Non-negotiable routing rule:
 - The left icon rail must synchronize with the active route.
 - Mobile drawer uses the same route model.
 
+## Navigation Model
+
+The Web Terminal has eight primary keyboard routes and may keep Fincept's denser left rail as secondary navigation.
+
+Primary F-key routes:
+
+| Shortcut | Primary Route | Left Rail Entry |
+| --- | --- | --- |
+| F1 | Overview | Overview |
+| F2 | Markets | Markets |
+| F3 | Signals | Signals |
+| F4 | Risk | Risk |
+| F5 | News | News |
+| F6 | Data | Data |
+| F7 | Agents | Agents |
+| F8 | Audit | Audit |
+
+Left rail rule:
+
+- The first eight rail items mirror the F1-F8 primary routes.
+- Additional Fincept-inspired entries are secondary routes, not F-key routes.
+- Secondary routes must not create competing top-level concepts.
+- Secondary routes may be implemented as disabled placeholders in MVP if their underlying page is deferred.
+- The active visual state belongs to exactly one primary route or one secondary route.
+- On mobile, the drawer lists the same groups: `Primary`, then `Support`.
+
+Secondary/support rail entries for MVP:
+
+| Support Entry | MVP Behavior | Parent Context |
+| --- | --- | --- |
+| Strategy Arena | Placeholder or read-only strategy leaderboard | Agents / Audit |
+| Watchlist | Opens tracked markets view or right-rail watchlist focus | Markets |
+| Dataroom | Placeholder entry with upload disabled | Data |
+| Plans & Credits | Placeholder/support page, no billing flow | Settings |
+| Settings | Static/mock settings with no secrets | System support |
+| Log Out | Disabled/local placeholder unless auth exists | System support |
+
 ## Route Definitions
 
 ### F1 Overview
@@ -224,7 +261,7 @@ Core content:
 
 - Risk limits: max order, max total exposure, max positions, daily loss limit, max spread, min depth.
 - Exposure matrix by category, market, correlated event, expiry bucket.
-- Approval queue for paper trades.
+- Approval queue backed by persisted trade proposals.
 - Kill switch.
 - Risk rejects and skip history.
 - Configuration diff preview before save.
@@ -240,6 +277,7 @@ Action constraints:
 
 - All actions require confirmation.
 - All changes write audit entries with old value, new value, actor, timestamp, result.
+- Approving a proposal is the only UI path that can convert a pending proposal into a paper fill when manual approval mode is enabled.
 - Kill switch must be visually prominent and reversible only through explicit resume.
 
 ### F5 News
@@ -361,12 +399,12 @@ The replica should not discard Fincept's logged-in page taxonomy. It should map 
 | News | F5 News |
 | Economics | F6 Data and F5 macro news context |
 | Agentic World | F7 Agents |
-| Fund Managers | Strategy Arena support page, later under Agents/Audit |
-| Dataroom | F6 Data support entry, deferred |
-| Plans & Credits | Support/placeholder, deferred |
+| Fund Managers | Secondary Strategy Arena route, later under Agents/Audit |
+| Dataroom | Secondary Data support route, upload disabled in MVP |
+| Plans & Credits | Secondary support route, no billing in MVP |
 | History | F8 Audit |
 | Alerts | Right rail risk alerts plus F4 Risk |
-| Settings | Settings support route, deferred |
+| Settings | Secondary support route with mock/static settings in MVP |
 
 ## External Project Capability Placement
 
@@ -452,13 +490,116 @@ The Web architecture should use these tables as the initial source of truth:
 - `algo_polymarket_paper_trades`
 - `algo_polymarket_paper_positions`
 
+The Web MVP must add two explicit persistence concepts before implementing manual approvals:
+
+- `algo_polymarket_trade_proposals`
+- `algo_polymarket_audit_events`
+
 Gaps for Web MVP:
 
 - Add a read API for current deployment state.
 - Add a control API for paper start/stop.
-- Add audit rows for UI control actions.
+- Add trade proposal rows before any manual approval queue is exposed.
+- Add audit rows for UI control actions and runner-controlled proposal/fill transitions.
 - Add optional source metadata view for cached payload freshness.
 - Add route-friendly summary projections for Overview, Markets, Signals, Risk, and Audit.
+
+## Approval State Machine
+
+The current paper runner can record a signal and immediately simulate an entry fill after risk checks pass. That is acceptable for an automatic paper-only mode, but it conflicts with a Web Risk approval queue.
+
+The Web MVP must therefore support an explicit approval mode:
+
+- `auto_paper`: runner may proceed from signal to risk check to paper fill.
+- `manual_approval`: runner must stop after a risk-eligible signal and persist a trade proposal.
+
+Default Web MVP mode:
+
+- `manual_approval`
+
+Trade proposal lifecycle:
+
+```mermaid
+stateDiagram-v2
+  [*] --> proposed
+  proposed --> approved: user approves in Risk
+  proposed --> rejected: user rejects in Risk
+  proposed --> expired: quote or market data becomes stale
+  proposed --> cancelled: bot stopped or kill switch triggered
+  approved --> filled: runner simulates paper fill
+  approved --> failed: fill simulation fails
+  filled --> [*]
+  rejected --> [*]
+  expired --> [*]
+  cancelled --> [*]
+  failed --> [*]
+```
+
+`algo_polymarket_trade_proposals` minimum schema:
+
+| Field | Purpose |
+| --- | --- |
+| `id` | SQLite primary key |
+| `proposal_id` | Stable external id for API/UI |
+| `deployment_id` | Bot deployment |
+| `strategy_id` | Strategy that produced the proposal |
+| `market_id` | Polymarket market id, where available |
+| `condition_id` | Polymarket condition id, where available |
+| `asset_id` | Outcome token asset id |
+| `side` | Proposed paper side, initially `buy` or `exit` |
+| `size` | Proposed paper size |
+| `price` | Proposed execution reference price |
+| `estimated_probability` | Signal probability estimate |
+| `edge` | Signal edge at proposal creation |
+| `confidence` | Signal confidence |
+| `reason` | Human-readable proposal reason |
+| `features_json` | Feature contributions and diagnostics |
+| `status` | `proposed`, `approved`, `rejected`, `expired`, `cancelled`, `filled`, `failed` |
+| `created_at` | Proposal creation time |
+| `expires_at` | Time after which quote is stale |
+| `decided_at` | Approval/rejection time |
+| `decided_by` | Actor id or local/system actor label |
+| `decision_reason` | Optional approval/rejection note |
+| `fill_trade_id` | Link to paper trade after fill, where available |
+
+Runner/API contract:
+
+- In `manual_approval`, the runner records `algo_polymarket_signals` and `algo_polymarket_trade_proposals`, but does not call paper fill simulation for that proposal until it is approved.
+- Approval does not guarantee fill; the runner must re-check freshness, order book availability, and risk before simulating the paper fill.
+- Expired, rejected, cancelled, and failed proposals must remain visible in Risk and Audit.
+- A kill switch cancels all open proposals for the deployment.
+
+## Audit Event Storage Contract
+
+`algo_polymarket_audit_events` is the append-only ledger for UI and runner control actions.
+
+Minimum schema:
+
+| Field | Purpose |
+| --- | --- |
+| `id` | SQLite primary key |
+| `event_id` | Stable external id for API/UI |
+| `deployment_id` | Deployment id, nullable for app-wide events |
+| `strategy_id` | Strategy id, nullable |
+| `actor_type` | `user`, `system`, `runner`, `agent` |
+| `actor_id` | User id, local user label, runner id, or agent id |
+| `action` | `start`, `stop`, `approve`, `reject`, `kill_switch`, `resume`, `config_change`, `proposal_created`, `proposal_expired`, `fill_simulated`, `error` |
+| `entity_type` | `deployment`, `proposal`, `trade`, `risk_config`, `source`, `agent_task` |
+| `entity_id` | Related id |
+| `before_json` | Previous state or values |
+| `after_json` | New state or values |
+| `result` | `success`, `rejected`, `failed`, `skipped` |
+| `reason` | Human-readable reason or error message |
+| `request_id` | API request correlation id |
+| `created_at` | Event time |
+
+Audit rules:
+
+- UI must never edit or delete audit events.
+- Every user-visible control action writes an audit row whether it succeeds or fails.
+- Runner-created proposal, expiry, fill, and error transitions write audit rows.
+- Agent-created recommendations write audit rows only when they create, update, or attach to a proposal or signal.
+- Audit views may be filtered or exported, but not mutated.
 
 ## Safety Rules
 
@@ -468,7 +609,8 @@ Trading safety:
 - Live trading controls are disabled and labeled as future scope.
 - No private keys, Polymarket API secrets, or live CLOB order paths are exposed.
 - AI/Agent output cannot execute trades.
-- Signals are advisory until Risk/Overview approval creates an auditable paper action.
+- Signals are advisory until Risk/Overview approval moves a persisted proposal into an approved state.
+- In manual approval mode, an approved proposal must still pass freshness, order-book, and risk checks before a paper fill is simulated.
 
 Data safety:
 
@@ -483,6 +625,7 @@ UI safety:
 - Start, stop, approve, reject, kill switch, resume, and risk config changes require explicit confirmation.
 - Every control action writes an audit entry.
 - Audit is append-only from the UI.
+- Rejection, expiry, cancellation, and failed fill states remain visible rather than being removed from the queue.
 - Right rail data failures must not block main page routing.
 
 ## MVP Scope
@@ -497,9 +640,10 @@ MVP must include:
 - F1 Overview connected to paper-bot deployment summary.
 - F2 Markets with market table, selected market detail, order book summary, and `lightweight-charts`.
 - F3 Signals with signal table, edge explanation, skip reasons, and advisory evidence panels.
-- F4 Risk with limits, approval queue, kill switch, skips, and risk audit events.
-- F8 Audit with trades, signals, positions, candidates, skips, and control actions.
+- F4 Risk with limits, persisted proposal approval queue, kill switch, skips, and risk audit events.
+- F8 Audit with trades, signals, positions, candidates, skips, proposals, and control actions.
 - F5 News, F6 Data, F7 Agents as functional placeholders with adapter boundaries and mock/sample data.
+- Secondary support rail entries for Strategy Arena, Watchlist, Dataroom, Plans & Credits, Settings, and Log Out with explicit placeholder/disabled behavior where deferred.
 - Mobile responsive shell with drawer navigation and no horizontal overflow.
 
 MVP must not include:
@@ -574,6 +718,7 @@ Rules:
 - A failed paper-bot backend call shows a terminal-style error panel and writes an audit entry if it followed a user action.
 - Stale data is visually marked and cannot drive approval.
 - Missing order book disables trade proposal actions for that market.
+- Pending proposals expire when their quote or source data becomes stale.
 - Risk rejects appear as normal operational outcomes, not application errors.
 
 ## Testing and Verification
@@ -599,7 +744,8 @@ Data verification:
 - Overview reads current positions, trades, skips, and signals.
 - Markets handles missing/stale/empty order books.
 - Signals displays reasons and feature contributions.
-- Audit shows control actions and bot events.
+- Risk displays pending, approved, rejected, expired, cancelled, filled, and failed proposal states.
+- Audit shows control actions, proposal transitions, and bot events.
 
 Risk verification:
 
@@ -607,6 +753,8 @@ Risk verification:
 - Kill switch requires confirmation.
 - Risk config change shows diff before save.
 - Every control action appears in Audit.
+- In manual approval mode, eligible signals create proposals before fills.
+- Approving an expired proposal cannot create a fill.
 
 Regression verification:
 
@@ -619,13 +767,14 @@ This is not the detailed implementation plan. The recommended implementation seq
 
 1. Build terminal shell and routing scaffold.
 2. Build mock data layer and static route pages.
-3. Connect Overview and Audit to SQLite paper-bot tables.
-4. Connect Markets to market/candidate/order-book summaries.
-5. Add `lightweight-charts` probability/PnL charts.
-6. Add Signals and Risk pages with advisory and controlled-action boundaries.
-7. Add News/Data/Agents placeholders and adapter interfaces.
-8. Run desktop/mobile visual verification.
-9. Expand adapters only after the core paper-bot operations surface is stable.
+3. Add proposal and audit-event persistence contracts.
+4. Connect Overview and Audit to SQLite paper-bot tables.
+5. Connect Markets to market/candidate/order-book summaries.
+6. Add `lightweight-charts` probability/PnL charts.
+7. Add Signals and Risk pages with advisory and controlled-action boundaries.
+8. Add News/Data/Agents placeholders and adapter interfaces.
+9. Run desktop/mobile visual verification.
+10. Expand adapters only after the core paper-bot operations surface is stable.
 
 ## Open Questions For Later Planning
 
