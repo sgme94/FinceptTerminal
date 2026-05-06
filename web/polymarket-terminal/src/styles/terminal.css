@@ -175,6 +175,147 @@
   justify-content: space-between;
 }
 
+.terminal-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--terminal-border);
+  background: #11100f;
+  color: var(--terminal-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.terminal-button-accent {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+
+.terminal-button-danger {
+  border-color: #a8423f;
+  color: #ff8a80;
+}
+
+.terminal-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.terminal-button-icon {
+  display: inline-flex;
+}
+
+.dense-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dense-data-table caption {
+  text-align: left;
+  color: var(--terminal-muted);
+  margin-bottom: 6px;
+}
+
+.dense-data-table th,
+.dense-data-table td {
+  border-bottom: 1px solid var(--terminal-border);
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.dense-data-table th {
+  color: var(--terminal-muted);
+  font-weight: 500;
+}
+
+.dense-data-table .align-right {
+  text-align: right;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid var(--terminal-border);
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--terminal-muted);
+}
+
+.status-pill-ok {
+  border-color: #286c48;
+  color: #72d99b;
+}
+
+.status-pill-warn,
+.status-pill-mock {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+
+.status-pill-danger {
+  border-color: #a8423f;
+  color: #ff8a80;
+}
+
+.empty-state-panel {
+  display: grid;
+  min-height: 96px;
+  align-content: center;
+  gap: 6px;
+  border: 1px dashed var(--terminal-border);
+  padding: 14px;
+  color: var(--terminal-muted);
+}
+
+.empty-state-title {
+  color: var(--terminal-text);
+  font-size: 13px;
+}
+
+.empty-state-panel p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.probability-chart {
+  width: 100%;
+  min-height: 180px;
+}
+
+.order-book-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--terminal-border);
+}
+
+.order-book-summary div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.order-book-summary div + div {
+  border-left: 1px solid var(--terminal-border);
+}
+
+.order-book-summary span,
+.order-book-summary small {
+  color: var(--terminal-muted);
+  font-size: 11px;
+}
+
+.order-book-summary strong {
+  color: var(--terminal-text);
+  font-size: 16px;
+  font-weight: 500;
+}
+
 @media (max-width: 560px) {
   .terminal-top {
     align-items: center;
