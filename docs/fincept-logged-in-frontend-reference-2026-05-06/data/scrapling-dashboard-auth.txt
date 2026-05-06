@@ -1,0 +1,93 @@
+F1 DASH
+F2 MKT
+F3 WL
+F4 PORT
+F5 NEWS
+F6 ECON
+F7 AGENTS
+F8 HIST
+GO
+|
+CREDITS: ###
+|
+API:
+OPERATIONAL
+v3.0.0
+|
+CONN:
+LIVE
+|
+LIVE NEWS >
+Loading news...
+WATCHLIST >
+US Markets
+Ticker
+Trend
+Chg%
+Price
+ES=F
++0.00%
+0.00
+NQ=F
++0.00%
+0.00
+^VIX
++0.00%
+0.00
+DX-Y.NYB
++0.00%
+0.00
+BTC-USD
++0.00%
+0.00
+MOST ACTIVE
+Ticker
+Trend
+Chg%
+Price
+Vol
+GOOGL
++0.00%
+0.00
+—
+TSLA
++0.00%
+0.00
+—
+AMZN
++0.00%
+0.00
+—
+NVDA
++0.00%
+0.00
+—
+META
++0.00%
+0.00
+—
+AAPL
++0.00%
+0.00
+—
+MSFT
++0.00%
+0.00
+—
+JPM
++0.00%
+0.00
+—
+SYS:
+OPERATIONAL
+|
+LAT:
+0ms
+|
+CONN:
+LIVE
+|
+UP:
+0s
+|
+

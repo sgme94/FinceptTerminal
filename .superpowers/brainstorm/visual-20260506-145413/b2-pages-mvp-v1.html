@@ -1,0 +1,63 @@
+<h2>B2 页面级设计与 MVP 范围</h2>
+<p class="subtitle">把 Fincept 的 14 个登录态入口重排为 Polymarket 自动交易终端。MVP 先做到可研究、可监控、可控制 paper bot。</p>
+
+<div class="mockup">
+  <div class="mockup-header">F 键主路径</div>
+  <div class="mockup-body">
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
+      <div class="placeholder"><b>F1 Overview</b><br>bot mode, health, PnL, exposure, positions, orders</div>
+      <div class="placeholder"><b>F2 Markets</b><br>market discovery, probability chart, order book, liquidity</div>
+      <div class="placeholder"><b>F3 Signals</b><br>model score, agent consensus, evidence, edge explanation</div>
+      <div class="placeholder"><b>F4 Risk</b><br>limits, approvals, exposure matrix, kill switch, skips</div>
+      <div class="placeholder"><b>F5 News</b><br>TrendRadar/news feed, market impact, source freshness</div>
+      <div class="placeholder"><b>F6 Data</b><br>OpenBB/public APIs/OSINT connectors, cache status</div>
+      <div class="placeholder"><b>F7 Agents</b><br>event sentinels, research cycles, findings, dissent</div>
+      <div class="placeholder"><b>F8 Audit</b><br>trades, signals, config changes, errors, replay</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">侧栏入口保留策略</div>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="core" onclick="toggleSelect(this)">
+      <div class="letter">Core</div>
+      <div class="content"><h3>MVP 核心入口</h3><p>Overview、Markets、Signals、Risk、Audit 必须可用，直接连接 paper bot 状态和 SQLite 记录。</p></div>
+    </div>
+    <div class="option" data-choice="support" onclick="toggleSelect(this)">
+      <div class="letter">Support</div>
+      <div class="content"><h3>支撑入口</h3><p>News、Data、Agents、Arena 使用 mock/adaptor 数据先形成体验，逐步接 TrendRadar、OpenBB、TradingAgents。</p></div>
+    </div>
+    <div class="option" data-choice="defer" onclick="toggleSelect(this)">
+      <div class="letter">Defer</div>
+      <div class="content"><h3>延后入口</h3><p>Dataroom、Plans & Credits、Settings 保留 Fincept 结构，但 MVP 只做静态/配置占位。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>MVP 验收标准</h4>
+    <ul>
+      <li>1700x900 桌面 shell 高保真：顶部、ticker、左 rail、右 rail、底部状态栏。</li>
+      <li>390x844 移动端无横向溢出，菜单抽屉可用，触控目标不小于 40px。</li>
+      <li>Overview 可显示 paper bot deployment、positions、trades、PnL、skips。</li>
+      <li>Markets 使用 lightweight-charts 显示概率/价格走势，并展示 order book 摘要。</li>
+      <li>Risk 所有控制动作必须确认，并写入审计事件。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>明确不进 MVP</h4>
+    <ul>
+      <li>不做真实资金 live trading。</li>
+      <li>不做真实支付/credits 消耗闭环。</li>
+      <li>不把所有外部项目一次性深度集成，只定义 adapter 边界。</li>
+      <li>不逐字固定实时新闻、行情、价格和账户文本。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">默认实现顺序</div>
+  <p>Shell -> mock data layer -> Overview -> Markets -> Signals -> Risk -> Audit -> News/Data/Agents/Arena placeholders -> mobile QA。</p>
+</div>

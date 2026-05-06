@@ -1,0 +1,70 @@
+<h2>B2 数据流与能力集成</h2>
+<p class="subtitle">前端不是直接调用交易逻辑，而是通过 API 读取状态、提交控制命令；现有 paper bot 继续作为核心执行边界。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Runtime Data Flow</div>
+  <div class="mockup-body">
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+      <div class="placeholder">
+        Data Sources<br>
+        Polymarket Gamma/CLOB/Data API<br>
+        OpenBB / public APIs<br>
+        TrendRadar / Sherlock OSINT<br>
+        News + RSS + social signals
+      </div>
+      <div class="placeholder">
+        Research + Signal Layer<br>
+        Kronos / TimesFM forecasts<br>
+        TradingAgents debates<br>
+        dexter research loops<br>
+        MiroFish scenario simulation
+      </div>
+      <div class="placeholder">
+        Execution Boundary<br>
+        existing polymarket_runner.py<br>
+        paper fills / positions<br>
+        risk checks / skips<br>
+        SQLite audit tables
+      </div>
+    </div>
+    <div class="placeholder">Backend API facade: /api/bot/status, /api/markets, /api/signals, /api/risk, /api/audit, /api/control</div>
+    <div class="placeholder">Fincept-style Web Terminal: Overview, Markets, Signals, Risk, News/Data, Agents, Arena, Audit</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">页面权限分层</div>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="readonly" onclick="toggleSelect(this)">
+      <div class="letter">R</div>
+      <div class="content"><h3>Read-only Pages</h3><p>News、Data、Audit、Settings 默认只读，避免误触交易链路。</p></div>
+    </div>
+    <div class="option" data-choice="advisory" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content"><h3>Advisory Pages</h3><p>Signals、Agents 允许生成建议、解释证据、标记置信度，但不能直接下单。</p></div>
+    </div>
+    <div class="option" data-choice="controlled" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content"><h3>Controlled Actions</h3><p>Overview、Risk 允许 start/stop、paper/live 切换、Approve Trades，必须经过显式确认和审计记录。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>沿用现有资产</h4>
+    <ul>
+      <li>现有 `polymarket_runner.py` 已有 scan、signal、risk、paper fill、SQLite 记录。</li>
+      <li>现有 store 表可直接驱动 Overview、Signals、Risk、Audit 的初始版本。</li>
+      <li>前端先展示 paper bot，后续 live trading 必须单独设计审批和密钥边界。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>明确限制</h4>
+    <ul>
+      <li>AI 只做研究和解释，不生成价格、盘口、成交或市场状态。</li>
+      <li>外部项目先作为插件层，不把 Kronos/TimesFM/Agents 强耦合进交易 loop。</li>
+      <li>所有控制动作都落审计表，UI 不做“静默自动交易”。</li>
+    </ul>
+  </div>
+</div>

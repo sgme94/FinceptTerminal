@@ -1,0 +1,79 @@
+<h2>B2 修正版：F1-F8 是页面路由快捷键</h2>
+<p class="subtitle">每个 F 键切换一个完整页面，不是在同一个页面聚合 8 个板块。Terminal Shell 保持常驻，中央 Main Workspace 根据路由替换。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Persistent Shell + Single Active Page</div>
+  <div class="mockup-body">
+    <div class="mock-nav">F1 OVERVIEW | F2 MARKETS | F3 SIGNALS | F4 RISK | F5 NEWS | F6 DATA | F7 AGENTS | F8 AUDIT | SEARCH | STATUS</div>
+    <div class="placeholder">Persistent Ticker Tape: market moves, probability moves, PnL, risk alerts</div>
+    <div style="display:grid; grid-template-columns:48px minmax(0,1fr) 300px; gap:10px;">
+      <div class="mock-sidebar">Icon Rail<br><br>active route highlighted</div>
+      <div class="mock-content">
+        <b>Main Workspace: exactly one page active</b><br><br>
+        Example after pressing F2:<br>
+        <span style="color:#ff7722">POLYMARKET MARKETS</span><br>
+        discovery filters, event table, probability chart, order book, liquidity, selected market detail
+      </div>
+      <div class="mock-sidebar">Right Rail<br><br>Live News<br>Watchlist<br>Most Active<br>Risk Alerts</div>
+    </div>
+    <div class="placeholder">Persistent Bottom Status: API, feeds, latency, connection, uptime, memory, current time</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">F-key route map</div>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="f1" onclick="toggleSelect(this)">
+      <div class="letter">F1</div>
+      <div class="content"><h3>Overview Page</h3><p>完整页面：bot status、paper/live mode、PnL、positions、pending orders、agent composer、recent cycles。</p></div>
+    </div>
+    <div class="option" data-choice="f2" onclick="toggleSelect(this)">
+      <div class="letter">F2</div>
+      <div class="content"><h3>Markets Page</h3><p>完整页面：market discovery、probability chart、order book、liquidity、spread、selected market detail。</p></div>
+    </div>
+    <div class="option" data-choice="f3" onclick="toggleSelect(this)">
+      <div class="letter">F3</div>
+      <div class="content"><h3>Signals Page</h3><p>完整页面：edge table、model forecasts、agent consensus、evidence trail、confidence and skip reasons。</p></div>
+    </div>
+    <div class="option" data-choice="f4" onclick="toggleSelect(this)">
+      <div class="letter">F4</div>
+      <div class="content"><h3>Risk Page</h3><p>完整页面：limits、exposure matrix、approval queue、circuit breakers、kill switch、risk audit events。</p></div>
+    </div>
+    <div class="option" data-choice="f5" onclick="toggleSelect(this)">
+      <div class="letter">F5</div>
+      <div class="content"><h3>News Page</h3><p>完整页面：TrendRadar/news feed、impact tags、source freshness、market-linked headlines。</p></div>
+    </div>
+    <div class="option" data-choice="f6" onclick="toggleSelect(this)">
+      <div class="letter">F6</div>
+      <div class="content"><h3>Data Page</h3><p>完整页面：OpenBB/public APIs/OSINT connectors、cache health、source coverage、data room入口。</p></div>
+    </div>
+    <div class="option" data-choice="f7" onclick="toggleSelect(this)">
+      <div class="letter">F7</div>
+      <div class="content"><h3>Agents Page</h3><p>完整页面：event sentinels、research cycles、findings、disagreement、TradingAgents/dexter workflows。</p></div>
+    </div>
+    <div class="option" data-choice="f8" onclick="toggleSelect(this)">
+      <div class="letter">F8</div>
+      <div class="content"><h3>Audit Page</h3><p>完整页面：signals、trades、positions、config changes、start/stop、approval history、error replay。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>修正后的规则</h4>
+    <ul>
+      <li>F1-F8 和顶部按钮都是 route switcher。</li>
+      <li>左侧 icon rail 与当前 route 同步高亮。</li>
+      <li>桌面右 rail 和底部状态栏跨页面常驻。</li>
+      <li>移动端 hamburger drawer 使用同一套路由，不另建导航体系。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>避免误实现</h4>
+    <ul>
+      <li>Overview 不是 8 个页面的聚合总览。</li>
+      <li>F2/F3/F4 等页面不能藏在 Dashboard 的 tab 里。</li>
+      <li>支持页可做占位，但仍作为独立路由进入。</li>
+    </ul>
+  </div>
+</div>
