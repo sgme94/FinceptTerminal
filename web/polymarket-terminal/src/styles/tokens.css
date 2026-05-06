@@ -1,0 +1,29 @@
+:root {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: #f2eee8;
+  background: #050505;
+  color-scheme: dark;
+  --terminal-bg: #050505;
+  --terminal-panel: #0b0b0a;
+  --terminal-border: #2a2118;
+  --terminal-text: #f2eee8;
+  --terminal-muted: #9a8f83;
+  --terminal-accent: #ff9d2e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--terminal-bg);
+}
