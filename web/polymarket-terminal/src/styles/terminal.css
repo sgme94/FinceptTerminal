@@ -1,74 +1,204 @@
 .terminal-shell {
   min-height: 100vh;
-  display: grid;
-  place-items: stretch;
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
   background: var(--terminal-bg);
-}
-
-.terminal-panel {
-  min-height: calc(100vh - 48px);
-  border: 1px solid var(--terminal-border);
-  background: var(--terminal-panel);
   color: var(--terminal-text);
 }
 
-.terminal-bar {
+.terminal-top,
+.market-ticker,
+.bottom-status {
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+}
+
+.terminal-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--terminal-border);
+  min-height: 52px;
+  padding: 8px 12px;
+}
+
+.terminal-brand {
   color: var(--terminal-accent);
   font-size: 13px;
   letter-spacing: 0;
-}
-
-.terminal-title,
-.terminal-status {
   white-space: nowrap;
 }
 
-.terminal-body {
-  padding: 18px 16px;
-  font-size: 14px;
-  line-height: 1.6;
+.function-key-bar {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  justify-content: center;
 }
 
-.terminal-line,
-.terminal-muted {
+.function-key-button,
+.rail-button,
+.drawer-trigger,
+.drawer-route {
+  border: 1px solid var(--terminal-border);
+  background: #11100f;
+  color: var(--terminal-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.function-key-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.function-key-button span {
+  color: var(--terminal-accent);
+}
+
+.function-key-button[aria-current="page"],
+.rail-button[aria-current="page"],
+.drawer-route[aria-current="page"] {
+  border-color: var(--terminal-accent);
+  color: var(--terminal-accent);
+}
+
+.mobile-drawer {
+  display: none;
+  position: relative;
+}
+
+.drawer-trigger {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.drawer-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 190px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+}
+
+.drawer-route {
+  min-height: 38px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.market-ticker,
+.bottom-status {
+  display: flex;
+  gap: 18px;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--terminal-muted);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.terminal-layout {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 72px minmax(0, 1fr) 240px;
+  min-height: 0;
+}
+
+.icon-rail,
+.right-rail {
+  border-right: 1px solid var(--terminal-border);
+  background: #090908;
+}
+
+.icon-rail {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+}
+
+.rail-button {
+  width: 52px;
+  height: 38px;
+  font-size: 12px;
+}
+
+.workspace {
+  min-width: 0;
+  padding: 16px;
+}
+
+.workspace-panel {
+  min-height: 100%;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+  padding: 16px;
+}
+
+.workspace-kicker,
+.workspace-panel p,
+.right-rail p {
+  color: var(--terminal-muted);
   margin: 0;
 }
 
-.terminal-prompt {
-  color: var(--terminal-accent);
-  margin-right: 8px;
+.workspace-panel h1 {
+  margin: 8px 0 12px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-.terminal-muted {
-  color: var(--terminal-muted);
+.right-rail {
+  border-left: 1px solid var(--terminal-border);
+  border-right: 0;
+  padding: 14px;
+}
+
+.right-rail h2 {
+  margin: 0 0 12px;
+  color: var(--terminal-accent);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bottom-status {
+  border-top: 1px solid var(--terminal-border);
+  border-bottom: 0;
+  justify-content: space-between;
 }
 
 @media (max-width: 560px) {
-  .terminal-shell {
+  .terminal-top {
+    align-items: center;
+  }
+
+  .function-key-bar,
+  .icon-rail,
+  .right-rail {
+    display: none;
+  }
+
+  .mobile-drawer {
+    display: block;
+  }
+
+  .terminal-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .market-ticker {
+    gap: 12px;
+  }
+
+  .workspace {
     padding: 12px;
-  }
-
-  .terminal-panel {
-    min-height: calc(100vh - 24px);
-  }
-
-  .terminal-bar {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    padding: 8px 12px;
-  }
-
-  .terminal-body {
-    padding: 14px 12px;
   }
 }
