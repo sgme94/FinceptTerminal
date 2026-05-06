@@ -13,10 +13,14 @@ import { MarketTickerTape } from "./MarketTickerTape";
 import { MobileDrawer } from "./MobileDrawer";
 import { RightRail } from "./RightRail";
 import { AuditPage } from "../../pages/AuditPage";
+import { AgentsPage } from "../../pages/AgentsPage";
+import { DataPage } from "../../pages/DataPage";
 import { MarketsPage } from "../../pages/MarketsPage";
+import { NewsPage } from "../../pages/NewsPage";
 import { OverviewPage } from "../../pages/OverviewPage";
 import { RiskPage } from "../../pages/RiskPage";
 import { SignalsPage } from "../../pages/SignalsPage";
+import { SupportPage } from "../../pages/SupportPage";
 
 function findRoute(routes: TerminalRoute[], routeId: TerminalRouteId) {
   return routes.find((route) => route.id === routeId) ?? routes[0];
@@ -47,13 +51,23 @@ function renderRoute(activeRoute: TerminalRoute) {
     return <RiskPage />;
   }
 
-  return (
-    <section className="workspace-panel">
-      <p className="workspace-kicker">Workspace</p>
-      <h1>{activeRoute.label}</h1>
-      <p>{activeRoute.label} static route placeholder.</p>
-    </section>
-  );
+  if (activeRoute.id === "news") {
+    return <NewsPage />;
+  }
+
+  if (activeRoute.id === "data") {
+    return <DataPage />;
+  }
+
+  if (activeRoute.id === "agents") {
+    return <AgentsPage />;
+  }
+
+  if (!("functionKey" in activeRoute)) {
+    return <SupportPage route={activeRoute} />;
+  }
+
+  return <OverviewPage />;
 }
 
 export function TerminalShell() {

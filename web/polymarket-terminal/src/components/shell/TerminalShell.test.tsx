@@ -46,4 +46,28 @@ describe("TerminalShell", () => {
 
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
   });
+
+  it("renders page-specific content for F5, F6, and F7 routes", async () => {
+    const user = userEvent.setup();
+
+    render(<TerminalShell />);
+    await user.click(screen.getByRole("button", { name: "F5 News" }));
+    expect(screen.getByRole("table", { name: "Mock news feed" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "F6 Data" }));
+    expect(screen.getByText("Polymarket source status")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "F7 Agents" }));
+    expect(screen.getByText("Agents cannot trade")).toBeInTheDocument();
+  });
+
+  it("renders explicit disabled support placeholders from the rail", async () => {
+    const user = userEvent.setup();
+
+    render(<TerminalShell />);
+    await user.click(screen.getByRole("button", { name: "Strategy Arena rail" }));
+
+    expect(screen.getByRole("heading", { name: "Strategy Arena" })).toBeInTheDocument();
+    expect(screen.getByText("Disabled in MVP")).toBeInTheDocument();
+  });
 });
