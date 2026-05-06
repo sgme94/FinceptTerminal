@@ -7,6 +7,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   test: {
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts"
   },
@@ -15,4 +16,4 @@ export default defineConfig({
     port: 4177,
     strictPort: true
   }
-} as UserConfig & { test: { environment: "jsdom"; setupFiles: string } });
+} as UserConfig & { test: { include: string[]; environment: "jsdom"; setupFiles: string } });
