@@ -13,7 +13,10 @@ import { MarketTickerTape } from "./MarketTickerTape";
 import { MobileDrawer } from "./MobileDrawer";
 import { RightRail } from "./RightRail";
 import { AuditPage } from "../../pages/AuditPage";
+import { MarketsPage } from "../../pages/MarketsPage";
 import { OverviewPage } from "../../pages/OverviewPage";
+import { RiskPage } from "../../pages/RiskPage";
+import { SignalsPage } from "../../pages/SignalsPage";
 
 function findRoute(routes: TerminalRoute[], routeId: TerminalRouteId) {
   return routes.find((route) => route.id === routeId) ?? routes[0];
@@ -30,6 +33,18 @@ function renderRoute(activeRoute: TerminalRoute) {
 
   if (activeRoute.id === "audit") {
     return <AuditPage />;
+  }
+
+  if (activeRoute.id === "markets") {
+    return <MarketsPage />;
+  }
+
+  if (activeRoute.id === "signals") {
+    return <SignalsPage />;
+  }
+
+  if (activeRoute.id === "risk") {
+    return <RiskPage />;
   }
 
   return (

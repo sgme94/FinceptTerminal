@@ -3,10 +3,14 @@
 import {
   mockAuditEvents,
   mockBotStatus,
+  mockMarketCandidates,
+  mockRiskLimits,
+  mockSignals,
+  mockSkips,
   mockTerminalSnapshot,
   mockTradeProposals
 } from "../data/mockTerminalData";
-import type { AuditEvent, BotStatus, TerminalStatus, TradeProposal } from "./types";
+import type { AuditEvent, BotStatus, MarketCandidate, RiskLimit, SignalRow, SkipRow, TerminalStatus, TradeProposal } from "./types";
 
 const API_BASE = import.meta.env.VITE_POLYMARKET_API_BASE ?? "http://localhost:8765";
 
@@ -60,8 +64,74 @@ type TradeProposalsResponse = {
   proposals: TradeProposalResponse[];
 };
 
+type CandidateResponse = {
+  market_id?: string;
+  outcome?: string;
+  price?: number;
+  volume?: number;
+  liquidity?: number;
+  created_at?: string;
+};
+
+type CandidateListResponse = {
+  candidates: CandidateResponse[];
+};
+
+type SignalResponse = {
+  id?: number;
+  asset_id?: string;
+  action?: string;
+  estimated_probability?: number;
+  edge?: number;
+  confidence?: number;
+  reason?: string;
+  features?: Record<string, unknown>;
+  created_at?: string;
+};
+
+type SignalListResponse = {
+  signals: SignalResponse[];
+};
+
+type SkipResponse = {
+  id?: number;
+  market_id?: string;
+  asset_id?: string;
+  reason?: string;
+  detail?: string;
+  created_at?: string;
+};
+
+type SkipListResponse = {
+  skips: SkipResponse[];
+};
+
+export type ControlActionPayload = {
+  deployment_id: string;
+  strategy_id?: string;
+  actor_id?: string;
+  reason?: string;
+  request_id?: string;
+};
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`);
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
 
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -204,6 +274,60 @@ function mapTradeProposal(proposal: TradeProposalResponse): TradeProposal {
   };
 }
 
+function mapCandidate(candidate: CandidateResponse): MarketCandidate {
+  return {
+    id: candidate.market_id ?? "",
+    question: candidate.market_id ?? "Polymarket candidate",
+    category: candidate.outcome ?? "Market",
+    probability: Math.round((candidate.price ?? 0) * 100),
+    volumeUsd: candidate.volume ?? 0,
+    liquidityUsd: candidate.liquidity ?? 0,
+    spreadBps: 0,
+    closesAt: candidate.created_at ?? "",
+    source: "api"
+  };
+}
+
+function mapSignalFeatures(features?: Record<string, unknown>): Record<string, number> | undefined {
+  if (!features) {
+    return undefined;
+  }
+
+  const numericFeatures = Object.entries(features).filter(
+    (entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1])
+  );
+  return numericFeatures.length > 0 ? Object.fromEntries(numericFeatures) : undefined;
+}
+
+function mapSignal(signal: SignalResponse): SignalRow {
+  return {
+    id: `signal-${signal.id ?? signal.asset_id ?? ""}`,
+    marketId: signal.asset_id ?? "",
+    label: signal.asset_id ?? "Signal",
+    direction: signal.action === "sell" || signal.action === "no" ? "no" : "yes",
+    confidence: Math.round((signal.confidence ?? 0) * 100),
+    edgeBps: Math.round((signal.edge ?? 0) * 10000),
+    updatedAt: signal.created_at ?? "",
+    reason: signal.reason,
+    features: mapSignalFeatures(signal.features),
+    evidence: signal.reason ? [signal.reason] : [],
+    freshnessLabel: signal.created_at ? "api" : "",
+    source: "api"
+  };
+}
+
+function mapSkip(skip: SkipResponse): SkipRow {
+  return {
+    id: `skip-${skip.id ?? skip.market_id ?? ""}`,
+    marketId: skip.market_id ?? "",
+    assetId: skip.asset_id,
+    reason: skip.reason ?? "",
+    detail: skip.detail ?? "",
+    createdAt: skip.created_at ?? "",
+    source: "api"
+  };
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   try {
     return mapBotStatus(await fetchJson<BotStatusResponse>("/api/bot/status"));
@@ -238,17 +362,78 @@ export async function getTradeProposals(deploymentId?: string): Promise<TradePro
   }
 }
 
+export async function getCandidates(deploymentId?: string): Promise<MarketCandidate[]> {
+  const query = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : "";
+
+  try {
+    const body = await fetchJson<CandidateListResponse>(`/api/candidates${query}`);
+    return body.candidates.map(mapCandidate);
+  } catch {
+    return mockMarketCandidates;
+  }
+}
+
+export async function getSignals(deploymentId?: string): Promise<SignalRow[]> {
+  const query = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : "";
+
+  try {
+    const body = await fetchJson<SignalListResponse>(`/api/signals${query}`);
+    return body.signals.map(mapSignal);
+  } catch {
+    return mockSignals;
+  }
+}
+
+export async function getSkips(deploymentId?: string): Promise<SkipRow[]> {
+  const query = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : "";
+
+  try {
+    const body = await fetchJson<SkipListResponse>(`/api/skips${query}`);
+    return body.skips.map(mapSkip);
+  } catch {
+    return mockSkips;
+  }
+}
+
+export async function getRiskLimits(): Promise<RiskLimit[]> {
+  return mockRiskLimits;
+}
+
+export async function approveTradeProposal(
+  proposalId: string,
+  payload: ControlActionPayload
+): Promise<void> {
+  await postJson(`/api/proposals/${encodeURIComponent(proposalId)}/approve`, payload);
+}
+
+export async function rejectTradeProposal(
+  proposalId: string,
+  payload: ControlActionPayload
+): Promise<void> {
+  await postJson(`/api/proposals/${encodeURIComponent(proposalId)}/reject`, payload);
+}
+
+export async function triggerKillSwitch(payload: ControlActionPayload): Promise<void> {
+  await postJson("/api/control/kill-switch", payload);
+}
+
 export async function getTerminalSnapshot(deploymentId = "default"): Promise<TerminalStatus> {
-  const [status, proposals, auditEvents] = await Promise.all([
+  const [status, proposals, auditEvents, markets, signals, riskLimits] = await Promise.all([
     getBotStatus(),
     getTradeProposals(deploymentId),
-    getAuditEvents(deploymentId)
+    getAuditEvents(deploymentId),
+    getCandidates(deploymentId),
+    getSignals(deploymentId),
+    getRiskLimits()
   ]);
 
   return {
     ...mockTerminalSnapshot,
     status,
+    markets,
+    signals,
     proposals,
-    auditEvents
+    auditEvents,
+    riskLimits
   };
 }

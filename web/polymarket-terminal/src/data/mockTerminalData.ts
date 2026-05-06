@@ -6,6 +6,7 @@ import type {
   ProbabilityPoint,
   RiskLimit,
   SignalRow,
+  SkipRow,
   TerminalStatus,
   TradeProposal
 } from "../api/types";
@@ -60,7 +61,14 @@ export const mockSignals: SignalRow[] = [
     direction: "yes",
     confidence: 64,
     edgeBps: 118,
-    updatedAt: "2026-05-06T10:28:00.000Z"
+    updatedAt: "2026-05-06T10:28:00.000Z",
+    reason: "Fed implied path moved faster than market price.",
+    features: {
+      "macro repricing": 0.42,
+      liquidity: 0.21
+    },
+    evidence: ["CME odds update", "Polymarket spread stable"],
+    freshnessLabel: "fresh 2m"
   },
   {
     source: "mock",
@@ -71,7 +79,14 @@ export const mockSignals: SignalRow[] = [
     direction: "no",
     confidence: 57,
     edgeBps: 74,
-    updatedAt: "2026-05-06T10:24:00.000Z"
+    updatedAt: "2026-05-06T10:24:00.000Z",
+    reason: "Momentum and liquidity disagree with the displayed probability.",
+    features: {
+      momentum: 0.33,
+      "book imbalance": 0.18
+    },
+    evidence: ["Spot tape fade", "Order book ask depth"],
+    freshnessLabel: "fresh 6m"
   }
 ];
 
@@ -79,7 +94,7 @@ export const mockTradeProposals: TradeProposal[] = [
   {
     source: "mock",
     stale: true,
-    id: "prop-001",
+    id: "prop-proposed",
     deploymentId: "mock-deploy-001",
     marketId: "mkt-fed-2026",
     side: "buy",
@@ -89,7 +104,23 @@ export const mockTradeProposals: TradeProposal[] = [
     rationale: "Mock advisory signal only. No order placement is connected.",
     status: "proposed",
     createdAt: "2026-05-06T10:29:00.000Z"
-  }
+  },
+  ...(["approved", "rejected", "expired", "cancelled", "filled", "failed"] as TradeProposal["status"][]).map(
+    (status, index) => ({
+      source: "mock" as const,
+      stale: true,
+      id: `prop-${status}`,
+      deploymentId: "mock-deploy-001",
+      marketId: index % 2 === 0 ? "mkt-fed-2026" : "mkt-btc-100k",
+      side: "buy" as const,
+      outcome: "yes" as const,
+      price: 0.5 + index / 100,
+      sizeUsd: 100 + index * 25,
+      rationale: `Mock ${status} proposal for lifecycle display.`,
+      status,
+      createdAt: `2026-05-06T10:2${index}:00.000Z`
+    })
+  )
 ];
 
 export const mockAuditEvents: AuditEvent[] = [
@@ -199,6 +230,19 @@ export const mockRiskLimits: RiskLimit[] = [
     limitUsd: 1000,
     usedUsd: 620,
     status: "warn"
+  }
+];
+
+export const mockSkips: SkipRow[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "skip-thin-001",
+    marketId: "mkt-thin-001",
+    assetId: "asset-thin-001",
+    reason: "liquidity_below_threshold",
+    detail: "Book liquidity is below the paper strategy threshold.",
+    createdAt: "2026-05-06T10:18:00.000Z"
   }
 ];
 

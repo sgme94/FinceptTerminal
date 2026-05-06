@@ -39,6 +39,10 @@ export type SignalRow = DataQuality & {
   confidence: number;
   edgeBps: number;
   updatedAt: string;
+  reason?: string;
+  features?: Record<string, number>;
+  evidence?: string[];
+  freshnessLabel?: string;
 };
 
 export type TradeProposal = DataQuality & {
@@ -84,6 +88,15 @@ export type RiskLimit = DataQuality & {
   limitUsd: number;
   usedUsd: number;
   status: "ok" | "warn" | "breached";
+};
+
+export type SkipRow = DataQuality & {
+  id: string;
+  marketId: string;
+  assetId?: string;
+  reason: string;
+  detail: string;
+  createdAt: string;
 };
 
 export type ProbabilityPoint = {

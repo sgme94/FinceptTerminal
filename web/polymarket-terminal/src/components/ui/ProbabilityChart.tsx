@@ -13,7 +13,11 @@ export function ProbabilityChart({ label, data }: ProbabilityChartProps) {
   useEffect(() => {
     const container = containerRef.current;
 
-    if (!container) {
+    if (
+      !container ||
+      typeof window.matchMedia !== "function" ||
+      container.clientWidth === 0
+    ) {
       return undefined;
     }
 

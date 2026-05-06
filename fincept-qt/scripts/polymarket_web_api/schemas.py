@@ -64,6 +64,52 @@ class ProposalList(BaseModel):
     proposals: list[Proposal]
 
 
+class Candidate(BaseModel):
+    market_id: str | None = None
+    condition_id: str | None = None
+    asset_id: str | None = None
+    outcome: str | None = None
+    price: float | None = None
+    volume: float | None = None
+    liquidity: float | None = None
+    fetched_at: str | None = None
+    created_at: str
+
+
+class CandidateList(BaseModel):
+    candidates: list[Candidate]
+
+
+class Signal(BaseModel):
+    id: int
+    asset_id: str | None = None
+    action: str | None = None
+    entry_price: float | None = None
+    estimated_probability: float | None = None
+    edge: float | None = None
+    confidence: float | None = None
+    reason: str | None = None
+    features: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class SignalList(BaseModel):
+    signals: list[Signal]
+
+
+class Skip(BaseModel):
+    id: int
+    market_id: str | None = None
+    asset_id: str | None = None
+    reason: str
+    detail: str = ""
+    created_at: str
+
+
+class SkipList(BaseModel):
+    skips: list[Skip]
+
+
 class ControlActionRequest(BaseModel):
     deployment_id: str = "default"
     strategy_id: str = "manual"

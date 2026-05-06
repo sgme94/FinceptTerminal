@@ -11,6 +11,7 @@ describe("TerminalShell", () => {
     await user.click(screen.getByRole("button", { name: "F2 Markets" }));
 
     expect(screen.getByRole("heading", { name: "Markets" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Market candidates" })).toBeInTheDocument();
   });
 
   it("renders Risk page after pressing F4", async () => {
@@ -20,6 +21,7 @@ describe("TerminalShell", () => {
     await user.keyboard("{F4}");
 
     expect(screen.getByRole("heading", { name: "Risk" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Proposal approval queue" })).toBeInTheDocument();
   });
 
   it("keeps the left rail active state in sync with the route", async () => {
@@ -28,6 +30,7 @@ describe("TerminalShell", () => {
     render(<TerminalShell />);
     await user.click(screen.getByRole("button", { name: "F3 Signals" }));
 
+    expect(screen.getByRole("table", { name: "Signal table" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Signals rail" })).toHaveAttribute(
       "aria-current",
       "page"

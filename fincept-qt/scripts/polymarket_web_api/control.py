@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status as http_status
 
-from .repository import PolymarketRepository, ProposalNotFoundError
+from .repository import InvalidProposalStateError, PolymarketRepository, ProposalNotFoundError
 from .schemas import ControlActionRequest, ControlActionResponse
 
 
@@ -63,6 +63,8 @@ def decide_proposal(
         )
     except ProposalNotFoundError as exc:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="proposal_not_found") from exc
+    except InvalidProposalStateError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="proposal_not_proposed") from exc
     return ControlActionResponse(
         accepted=True,
         action=proposal_action(status),

@@ -9,9 +9,12 @@ from .repository import PolymarketRepository
 from .schemas import (
     AuditEventList,
     BotStatus,
+    CandidateList,
     ControlActionRequest,
     ControlActionResponse,
     ProposalList,
+    SignalList,
+    SkipList,
 )
 
 
@@ -32,6 +35,18 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
     def get_proposals(deployment_id: str = "default") -> ProposalList:
         return ProposalList(proposals=repo.list_proposals(deployment_id))
 
+    @app.get("/api/candidates", response_model=CandidateList)
+    def get_candidates(deployment_id: str = "default") -> CandidateList:
+        return CandidateList(candidates=repo.list_candidates(deployment_id))
+
+    @app.get("/api/signals", response_model=SignalList)
+    def get_signals(deployment_id: str = "default") -> SignalList:
+        return SignalList(signals=repo.list_signals(deployment_id))
+
+    @app.get("/api/skips", response_model=SkipList)
+    def get_skips(deployment_id: str = "default") -> SkipList:
+        return SkipList(skips=repo.list_skips(deployment_id))
+
     @app.post("/api/control/start", response_model=ControlActionResponse, status_code=status.HTTP_202_ACCEPTED)
     def start_bot(request: ControlActionRequest) -> ControlActionResponse:
         return accept_control_action(repo, "start", request)
@@ -39,6 +54,10 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
     @app.post("/api/control/stop", response_model=ControlActionResponse, status_code=status.HTTP_202_ACCEPTED)
     def stop_bot(request: ControlActionRequest) -> ControlActionResponse:
         return accept_control_action(repo, "stop", request)
+
+    @app.post("/api/control/kill-switch", response_model=ControlActionResponse, status_code=status.HTTP_202_ACCEPTED)
+    def kill_switch(request: ControlActionRequest) -> ControlActionResponse:
+        return accept_control_action(repo, "kill_switch", request)
 
     @app.post(
         "/api/proposals/{proposal_id}/approve",

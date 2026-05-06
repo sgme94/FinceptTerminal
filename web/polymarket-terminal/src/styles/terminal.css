@@ -210,7 +210,10 @@
 .page-warning,
 .filter-row label,
 .audit-event-list span,
-.audit-event-list small {
+.audit-event-list small,
+.detail-label,
+.detail-copy,
+.detail-row span {
   color: var(--terminal-muted);
   font-size: 12px;
 }
@@ -225,6 +228,59 @@
   color: var(--terminal-accent);
   font-size: 14px;
   font-weight: 500;
+}
+
+.terminal-page-grid-compact {
+  align-items: start;
+}
+
+.detail-stack,
+.stack-list {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-grid div,
+.detail-row {
+  display: grid;
+  gap: 4px;
+}
+
+.detail-grid strong,
+.detail-row strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.detail-copy {
+  margin: 0;
+}
+
+.detail-badges,
+.table-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.table-link-button {
+  border: 0;
+  background: transparent;
+  color: var(--terminal-text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.table-link-button:hover {
+  color: var(--terminal-accent);
 }
 
 .page-warning {
@@ -483,6 +539,7 @@
   .page-header,
   .metric-grid,
   .page-grid,
+  .detail-grid,
   .audit-event-list li {
     grid-template-columns: 1fr;
   }
