@@ -16,6 +16,8 @@ DEFAULT_BOT_CONFIG = {
     "excluded_tags": [],
     "min_time_to_expiry_hours": 24,
     "freshness_ttl_sec": 30,
+    "approval_mode": "manual_approval",
+    "proposal_ttl_sec": 60,
     "min_edge": 0.04,
     "confidence_threshold": 0.55,
     "momentum_weight": 0.20,

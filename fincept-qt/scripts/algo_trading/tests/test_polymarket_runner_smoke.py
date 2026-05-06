@@ -252,7 +252,7 @@ def test_live_runner_load_strategy_returns_polymarket_config(tmp_path):
 
 def test_algo_manager_lists_polymarket_summary(tmp_path):
     db = tmp_path / "fincept.db"
-    save_strategy(db, bot_config={"max_candidates": 2, "min_edge": 0.01})
+    save_strategy(db, bot_config={"approval_mode": "auto_paper", "max_candidates": 2, "min_edge": 0.01})
     seed_deployment(db)
     run_polymarket_cycle(
         db_path=str(db),
@@ -274,7 +274,7 @@ def test_algo_manager_lists_polymarket_summary(tmp_path):
 
 def test_runner_one_cycle_writes_signal_and_paper_fill(tmp_path):
     db = tmp_path / "fincept.db"
-    seed_strategy(db, market_type="polymarket", bot_config={"max_candidates": 2, "min_edge": 0.01})
+    seed_strategy(db, market_type="polymarket", bot_config={"approval_mode": "auto_paper", "max_candidates": 2, "min_edge": 0.01})
 
     result = run_polymarket_cycle(
         db_path=str(db),

@@ -16,6 +16,8 @@ def test_default_bot_config_contains_required_controls():
     assert cfg["sort_by"] == "volume"
     assert cfg["min_time_to_expiry_hours"] == 24
     assert cfg["freshness_ttl_sec"] == 30
+    assert cfg["approval_mode"] == "manual_approval"
+    assert cfg["proposal_ttl_sec"] == 60
     assert cfg["stop_loss_pct"] == 30.0
     assert cfg["take_profit_pct"] == 50.0
     assert "momentum_weight" in cfg

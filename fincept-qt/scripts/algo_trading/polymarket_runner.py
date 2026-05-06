@@ -5,7 +5,7 @@ import json
 import sqlite3
 import time
 from dataclasses import fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from polymarket_config import default_bot_config
@@ -20,10 +20,12 @@ from polymarket_store import (
     ensure_polymarket_schema,
     load_positions,
     record_candidate,
+    record_audit_event,
     record_scan_skip,
     record_signal,
     record_skip,
     record_trade,
+    record_trade_proposal,
     upsert_position,
 )
 
@@ -52,6 +54,7 @@ def run_polymarket_cycle(
             "scanned": 0,
             "signals": 0,
             "fills": 0,
+            "proposals": 0,
             "exits": 0,
             "skips": 0,
         }
@@ -74,7 +77,7 @@ def run_polymarket_cycle(
 
         positions = load_positions(conn, deployment_id)
         exited_assets = _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, result)
-        _process_entries(conn, deployment_id, positions, exited_assets, candidates, books, overrides, cfg, now, result)
+        _process_entries(conn, deployment_id, strategy_id, positions, exited_assets, candidates, books, overrides, cfg, now, result)
 
         conn.commit()
         return result
@@ -138,7 +141,7 @@ def _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, r
     return exited_assets
 
 
-def _process_entries(conn, deployment_id, positions, exited_assets, candidates, books, overrides, cfg, now, result) -> None:
+def _process_entries(conn, deployment_id, strategy_id, positions, exited_assets, candidates, books, overrides, cfg, now, result) -> None:
     for candidate in candidates:
         if candidate.asset_id in positions:
             continue
@@ -178,6 +181,47 @@ def _process_entries(conn, deployment_id, positions, exited_assets, candidates, 
         if not risk.ok:
             record_skip(conn, deployment_id, risk.reason, now, market_id=candidate.market_id, asset_id=candidate.asset_id)
             result["skips"] += 1
+            continue
+
+        approval_mode = str(cfg.get("approval_mode", "manual_approval"))
+        if approval_mode != "auto_paper":
+            expires_at = _proposal_expires_at(now, int(cfg.get("proposal_ttl_sec", 60)))
+            proposal_id = record_trade_proposal(
+                conn,
+                deployment_id,
+                strategy_id,
+                candidate.market_id,
+                candidate.condition_id,
+                signal,
+                signal.size,
+                now,
+                expires_at,
+            )
+            record_audit_event(
+                conn,
+                deployment_id,
+                strategy_id,
+                "runner",
+                "polymarket_runner",
+                "proposal_created",
+                "proposal",
+                proposal_id,
+                {},
+                {
+                    "status": "proposed",
+                    "proposal_id": proposal_id,
+                    "asset_id": signal.asset_id,
+                    "side": signal.action,
+                    "price": signal.entry_price,
+                    "size": signal.size,
+                    "expires_at": expires_at,
+                },
+                "success",
+                signal.reason,
+                "",
+                now,
+            )
+            result["proposals"] += 1
             continue
 
         fill = simulate_entry_fill(signal, book)
@@ -240,6 +284,13 @@ def _is_stale(payload: dict, now: str, ttl_sec: int) -> bool:
     return (now_dt - fetched_dt).total_seconds() > ttl_sec
 
 
+def _proposal_expires_at(now: str, ttl_sec: int) -> str:
+    parsed = _parse_utc(now)
+    if parsed is None:
+        return now
+    return (parsed + timedelta(seconds=ttl_sec)).isoformat().replace("+00:00", "Z")
+
+
 def _portfolio_from_positions(positions: dict) -> PortfolioState:
     exposure = sum(position.size * position.avg_price for position in positions.values())
     return PortfolioState(positions=positions, total_exposure=exposure)
@@ -285,7 +336,7 @@ def _seed_smoke_strategy(db_path: str) -> None:
         INSERT OR REPLACE INTO algo_strategies (id, market_type, bot_config)
         VALUES (?, 'polymarket', ?)
         """,
-        ("smoke-strategy", json.dumps({"max_candidates": 1, "min_edge": 0.01})),
+        ("smoke-strategy", json.dumps({"approval_mode": "auto_paper", "max_candidates": 1, "min_edge": 0.01})),
     )
     conn.commit()
     conn.close()
