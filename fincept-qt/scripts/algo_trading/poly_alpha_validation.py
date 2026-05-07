@@ -73,8 +73,7 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
         }
 
     documents = _cited_documents(conn, shadow_signal)
-    validation_ids = []
-    failure_reasons = []
+    validation_rows = []
     for validation_type in EXIT_TEMPLATES:
         template_result = calculate_template_result(
             validation_type=validation_type,
@@ -92,17 +91,25 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
             exit_snapshot=template_result.get("exit_snapshot"),
         )
         failure_reason = event_metrics.get("failure_reason", "")
-        pass_fail = "fail" if failure_reason else "pass"
-        if failure_reason:
-            failure_reasons.append(failure_reason)
+        validation_rows.append((validation_type, template_result, event_metrics, failure_reason))
+
+    failure_reasons = [
+        failure_reason
+        for _, _, _, failure_reason in validation_rows
+        if failure_reason
+    ]
+    lifecycle_pass_fail = "fail" if failure_reasons else "pass"
+    lifecycle_failure_reason = failure_reasons[0] if failure_reasons else ""
+    validation_ids = []
+    for validation_type, template_result, event_metrics, _ in validation_rows:
         validation_ids.append(
             _record_result(
                 conn,
                 shadow_signal,
                 now,
                 validation_type=validation_type,
-                pass_fail=pass_fail,
-                failure_reason=failure_reason,
+                pass_fail=lifecycle_pass_fail,
+                failure_reason=lifecycle_failure_reason,
                 entry_snapshot=entry_snapshot,
                 template_result=template_result,
                 event_metrics=event_metrics,
@@ -111,8 +118,8 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
 
     return {
         "validation_ids": validation_ids,
-        "pass_fail": "fail" if failure_reasons else "pass",
-        "failure_reason": failure_reasons[0] if failure_reasons else "",
+        "pass_fail": lifecycle_pass_fail,
+        "failure_reason": lifecycle_failure_reason,
     }
 
 
@@ -127,11 +134,11 @@ def calculate_event_time_metrics(
     signal_at = _parse_timestamp(shadow_signal.get("created_at", ""))
     if signal_at is None:
         return _empty_event_metrics()
-    latest_document = _latest_row(documents, "published_at")
+    latest_document = _latest_document_by_information_time(documents)
     if latest_document is None:
         return _empty_event_metrics()
 
-    info_at = _parse_timestamp(latest_document.get("published_at", ""))
+    info_at = _document_information_time(latest_document)
     fetched_at = _parse_timestamp(latest_document.get("fetched_at", ""))
     if info_at is None:
         return _empty_event_metrics()
@@ -210,17 +217,34 @@ def calculate_template_result(
         "exit_price": exit_price,
         "holding_period": holding_period,
         "gross_return": _gross_return(entry_price, exit_price, shadow_signal.get("side", "")),
+        # Phase 1 validates paper signals without fees/slippage; keep costs equal to gross.
         "cost_adjusted_return": _gross_return(
             entry_price,
             exit_price,
             shadow_signal.get("side", ""),
         ),
-        "closing_line_value": _delta(exit_price, entry_price),
+        "closing_line_value": _directional_move(
+            entry_price,
+            exit_price,
+            shadow_signal.get("side", ""),
+        ),
         "brier_score": brier_score,
         "calibration_error": calibration_error,
         "edge_decay": edge_decay,
-        "max_adverse_excursion": _max_excursion(entry_price, snapshots, signal_at, favorable=False),
-        "max_favorable_excursion": _max_excursion(entry_price, snapshots, signal_at, favorable=True),
+        "max_adverse_excursion": _max_excursion(
+            entry_price,
+            snapshots,
+            signal_at,
+            side=shadow_signal.get("side", ""),
+            favorable=False,
+        ),
+        "max_favorable_excursion": _max_excursion(
+            entry_price,
+            snapshots,
+            signal_at,
+            side=shadow_signal.get("side", ""),
+            favorable=True,
+        ),
     }
 
 
@@ -280,11 +304,11 @@ def _select_exit_snapshot(
 ) -> dict[str, Any] | None:
     if signal_at is None:
         return None
+    now_at = _parse_timestamp(now)
     future = [
         snapshot
         for snapshot in snapshots
-        if (_parse_timestamp(snapshot.get("observed_at", "")) or datetime.min.replace(tzinfo=timezone.utc))
-        >= signal_at
+        if _snapshot_is_between_signal_and_now(snapshot, signal_at, now_at)
     ]
     if validation_type == "fixed_horizon":
         target_at = signal_at + timedelta(seconds=int(config.get("fixed_horizon_sec", 3600)))
@@ -339,11 +363,17 @@ def _research_run(conn, run_id: str) -> dict[str, Any]:
     raise ValueError(f"Unknown run_id: {run_id}")
 
 
-def _latest_row(rows: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
-    candidates = [row for row in rows if _parse_timestamp(row.get(key, "")) is not None]
+def _latest_document_by_information_time(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = [row for row in rows if _document_information_time(row) is not None]
     if not candidates:
         return None
-    return max(candidates, key=lambda row: _parse_timestamp(row.get(key, "")))
+    return max(candidates, key=lambda row: _document_information_time(row))
+
+
+def _document_information_time(row: dict[str, Any]) -> datetime | None:
+    return _parse_timestamp(row.get("published_at", "")) or _parse_timestamp(
+        row.get("observed_at", "")
+    )
 
 
 def _latest_snapshot(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -425,11 +455,21 @@ def _gross_return(
     return move / entry_price
 
 
+def _directional_move(
+    entry_price: float | None,
+    exit_price: float | None,
+    side: str,
+) -> float:
+    move = _delta(exit_price, entry_price)
+    return -move if side == "sell" else move
+
+
 def _max_excursion(
     entry_price: float | None,
     snapshots: list[dict[str, Any]],
     signal_at: datetime | None,
     *,
+    side: str,
     favorable: bool,
 ) -> float | None:
     if not _is_number(entry_price) or signal_at is None:
@@ -440,7 +480,7 @@ def _max_excursion(
         price = _price(snapshot)
         if observed_at is None or observed_at < signal_at or not _is_number(price):
             continue
-        moves.append(price - entry_price)
+        moves.append(_directional_move(entry_price, price, side))
     if not moves:
         return 0.0
     return max(moves) if favorable else min(moves)
@@ -450,6 +490,17 @@ def _delta(left: float | None, right: float | None) -> float:
     if not _is_number(left) or not _is_number(right):
         return 0.0
     return left - right
+
+
+def _snapshot_is_between_signal_and_now(
+    snapshot: dict[str, Any],
+    signal_at: datetime,
+    now_at: datetime | None,
+) -> bool:
+    observed_at = _parse_timestamp(snapshot.get("observed_at", ""))
+    if observed_at is None or observed_at < signal_at:
+        return False
+    return now_at is None or observed_at <= now_at
 
 
 def _empty_event_metrics() -> dict[str, Any]:
