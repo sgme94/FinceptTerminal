@@ -210,6 +210,43 @@ def _insert_opportunity(
     )
 
 
+def _insert_event(conn: sqlite3.Connection, event_id: str) -> str:
+    return record_event(
+        conn,
+        event_id=event_id,
+        event_type="crypto_price",
+        title=f"Event {event_id}",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _link_event_to_market(
+    conn: sqlite3.Connection,
+    event_id: str,
+    venue_market_id: str,
+    *,
+    link_confidence: float | None = 0.82,
+) -> None:
+    record_event_market_link(
+        conn,
+        event_id=event_id,
+        venue="polymarket",
+        venue_market_id=venue_market_id,
+        venue_contract_id=f"contract-{venue_market_id}",
+        outcome_id="yes",
+        adapter_metadata={},
+        outcome="yes",
+        link_reason="same underlying event",
+        link_confidence=link_confidence,
+        created_at=NOW,
+    )
+
+
 def _seed_full_evidence(
     conn: sqlite3.Connection,
     *,
@@ -426,6 +463,37 @@ def test_deterministic_scan_rolls_back_writes_on_failure():
     assert list_opportunities(conn) == []
 
 
+def test_successful_scan_does_not_commit_when_caller_has_no_active_transaction():
+    conn = _conn()
+    _seed_versions(conn)
+    conn.commit()
+
+    run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document("doc-rollback", "market-rollback")],
+        [_snapshot("snap-rollback", "market-rollback", qualifies=True)],
+        NOW,
+    )
+    assert len(list_scan_runs(conn)) == 1
+
+    conn.rollback()
+
+    assert conn.execute("SELECT COUNT(*) FROM poly_alpha_strategy_versions").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM poly_alpha_source_sets").fetchone()[0] == 1
+    assert list_scan_runs(conn) == []
+    assert list_scan_results(conn) == []
+    assert list_market_snapshots(conn) == []
+    assert list_documents(conn) == []
+    assert list_opportunities(conn) == []
+
+
 def test_build_evidence_pack_persists_citable_ids_and_latest_timestamps():
     conn = _conn()
     _seed_versions(conn)
@@ -486,6 +554,7 @@ def test_build_evidence_pack_persists_citable_ids_and_latest_timestamps():
         created_at=NOW,
         updated_at=NOW,
     )
+    _link_event_to_market(conn, event_id, "market-pack")
 
     evidence_pack_id = build_evidence_pack(
         conn,
@@ -544,6 +613,7 @@ def test_build_evidence_pack_latest_timestamps_compare_offsets():
         created_at=NOW,
         updated_at=NOW,
     )
+    _link_event_to_market(conn, event_id, "market-offset")
 
     evidence_pack_id = build_evidence_pack(
         conn,
@@ -600,6 +670,68 @@ def test_build_evidence_pack_rejects_cross_market_evidence(
         )
 
     assert list_evidence_packs(conn) == []
+
+
+def test_build_evidence_pack_requires_every_event_to_link_to_opportunity_market():
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-events", "market-events")
+    document_id = _insert_document(conn, _document("doc-events", "market-events"))
+    snapshot_id = _insert_snapshot(conn, _snapshot("snap-events", "market-events"))
+    event_good = _insert_event(conn, "event-good")
+    event_other = _insert_event(conn, "event-other")
+    _link_event_to_market(conn, event_good, "market-events")
+    _link_event_to_market(conn, event_other, "market-other")
+
+    with pytest.raises(ValueError, match="does not link to opportunity market"):
+        build_evidence_pack(
+            conn,
+            opportunity_id,
+            [document_id],
+            [snapshot_id],
+            [event_good, event_other],
+            NOW,
+        )
+
+    assert list_evidence_packs(conn) == []
+
+
+def test_decide_exploration_requires_every_event_link_to_opportunity_market():
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-event-gate", "market-event-gate")
+    document_id = _insert_document(conn, _document("doc-event-gate", "market-event-gate"))
+    snapshot_id = _insert_snapshot(conn, _snapshot("snap-event-gate", "market-event-gate"))
+    event_good = _insert_event(conn, "event-gate-good")
+    event_other = _insert_event(conn, "event-gate-other")
+    _link_event_to_market(conn, event_good, "market-event-gate")
+    _link_event_to_market(conn, event_other, "market-other")
+    evidence_pack_id = record_evidence_pack(
+        conn,
+        opportunity_id=opportunity_id,
+        strategy_version_id="strat-v1",
+        document_ids=[document_id],
+        snapshot_ids=[snapshot_id],
+        event_ids=[event_good, event_other],
+        source_set_version="sources-v1",
+        latest_published_at=NOW,
+        latest_fetched_at=NOW,
+        latest_observed_at=NOW,
+        created_at=NOW,
+        payload_hash="pack-event-link-mismatch",
+    )
+
+    with pytest.raises(ValueError, match="does not link to opportunity market"):
+        decide_exploration(
+            conn,
+            opportunity_id,
+            evidence_pack_id,
+            default_poly_alpha_config({"historical_sample_count": 10}),
+            NOW,
+        )
+
+    assert list_exploration_decisions(conn) == []
+    assert list_opportunities(conn)[0]["status"] == "watch"
 
 
 def test_decide_exploration_rejects_pack_for_different_opportunity_without_side_effects():
@@ -764,6 +896,58 @@ def test_decide_exploration_passes_with_phase_1_default_without_agent_findings()
     }
 
 
+def test_decide_exploration_uses_latest_snapshot_by_parsed_observed_at():
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-latest", "market-latest")
+    document_id = _insert_document(conn, _document("doc-latest", "market-latest"))
+    early_snapshot = _insert_snapshot(
+        conn,
+        {
+            **_snapshot("snap-latest-early", "market-latest"),
+            "observed_at": "2026-05-07T11:59:50+00:00",
+            "market_probability": None,
+            "mid_price": 0.41,
+            "spread": None,
+        },
+    )
+    later_snapshot = _insert_snapshot(
+        conn,
+        {
+            **_snapshot("snap-latest-later", "market-latest"),
+            "observed_at": "2026-05-07T07:59:55-04:00",
+            "market_probability": None,
+            "mid_price": 0.53,
+            "spread": 0.03,
+        },
+    )
+    event_id = _insert_event(conn, "event-latest")
+    _link_event_to_market(conn, event_id, "market-latest")
+    evidence_pack_id = build_evidence_pack(
+        conn,
+        opportunity_id,
+        [document_id],
+        [early_snapshot, later_snapshot],
+        [event_id],
+        NOW,
+    )
+
+    decide_exploration(
+        conn,
+        opportunity_id,
+        evidence_pack_id,
+        default_poly_alpha_config({"historical_sample_count": 10}),
+        NOW,
+    )
+
+    decision = list_exploration_decisions(conn)[0]
+    assert decision["decision"] == "pass"
+    assert decision["metrics"]["current_market_metrics"]["market_probability"] == pytest.approx(
+        0.53
+    )
+    assert decision["metrics"]["current_market_metrics"]["spread"] == pytest.approx(0.03)
+
+
 @pytest.mark.parametrize(
     (
         "case",
@@ -837,18 +1021,6 @@ def test_decide_exploration_passes_with_phase_1_default_without_agent_findings()
             "reject",
             "rejected",
             "missing_current_snapshot",
-        ),
-        (
-            "missing_link_confidence",
-            10,
-            None,
-            None,
-            True,
-            False,
-            0.42,
-            "reject",
-            "rejected",
-            "missing_link_confidence",
         ),
         (
             "missing_market_probability",
@@ -976,3 +1148,79 @@ def test_decide_exploration_requires_deterministic_gate_inputs(
     assert decision["decision"] == expected_decision, case
     assert decision["reason"] == expected_reason, case
     assert list_opportunities(conn)[0]["status"] == expected_status, case
+
+
+def test_scan_qualifying_hint_cannot_override_negative_edge():
+    conn = _conn()
+    _seed_versions(conn)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document("doc-negative-edge", "market-negative-edge")],
+        [
+            _snapshot(
+                "snap-negative-edge",
+                "market-negative-edge",
+                qualifies=True,
+                market_probability=0.57,
+                estimated_probability=0.42,
+            )
+        ],
+        NOW,
+    )
+
+    scan_result = list_scan_results(conn, result["scan_run_id"])[0]
+    assert scan_result["decision"] == "watch"
+    assert scan_result["reason"] == "insufficient_edge"
+    assert list_opportunities(conn) == []
+
+
+@pytest.mark.parametrize(
+    ("case", "market_probability", "estimated_probability"),
+    [
+        ("negative_market_probability", -0.01, 0.55),
+        ("above_one_market_probability", 1.01, 0.55),
+        ("nan_estimated_probability", 0.42, float("nan")),
+    ],
+)
+def test_scan_rejects_out_of_range_or_non_finite_probability_metrics(
+    case,
+    market_probability,
+    estimated_probability,
+):
+    conn = _conn()
+    _seed_versions(conn)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document(f"doc-{case}", f"market-{case}")],
+        [
+            _snapshot(
+                f"snap-{case}",
+                f"market-{case}",
+                qualifies=True,
+                market_probability=market_probability,
+                estimated_probability=estimated_probability,
+            )
+        ],
+        NOW,
+    )
+
+    scan_result = list_scan_results(conn, result["scan_run_id"])[0]
+    assert scan_result["decision"] == "watch", case
+    assert scan_result["reason"] == "insufficient_edge", case
+    assert list_opportunities(conn) == [], case

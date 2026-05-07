@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -38,6 +39,10 @@ def run_deterministic_scan(
     market_snapshots,
     now,
 ):
+    started_transaction = False
+    if not conn.in_transaction:
+        conn.execute("BEGIN")
+        started_transaction = True
     savepoint_name = "poly_alpha_deterministic_scan"
     conn.execute(f"SAVEPOINT {savepoint_name}")
     try:
@@ -52,6 +57,8 @@ def run_deterministic_scan(
     except Exception:
         conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
         conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        if started_transaction:
+            conn.rollback()
         raise
     conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
     return result
@@ -149,6 +156,7 @@ def build_evidence_pack(
     snapshots = _rows_by_ids(list_market_snapshots(conn), "snapshot_id", snapshot_ids)
     events = _rows_by_ids(list_events(conn), "event_id", event_ids)
     _validate_evidence_market_consistency(opportunity, documents, snapshots)
+    _validate_event_links(conn, opportunity, event_ids)
 
     payload = {
         "opportunity_id": opportunity_id,
@@ -217,6 +225,7 @@ def decide_exploration(
     )
     events = _rows_by_ids(list_events(conn), "event_id", evidence_pack["event_ids"])
     _validate_evidence_market_consistency(opportunity, documents, snapshots)
+    _validate_event_links(conn, opportunity, evidence_pack["event_ids"])
 
     merged_config = default_poly_alpha_config(config)
     historical_sample_count = int(merged_config.get("historical_sample_count", 0))
@@ -329,6 +338,16 @@ def _validate_evidence_market_consistency(
             )
 
 
+def _validate_event_links(
+    conn,
+    opportunity: dict[str, Any],
+    event_ids: list[str],
+) -> None:
+    for event_id in event_ids:
+        if not _event_has_matching_link(conn, opportunity, event_id):
+            raise ValueError(f"Event {event_id} does not link to opportunity market")
+
+
 def _record_document(conn, source_document: dict[str, Any], now: str) -> str:
     payload_hash = source_document.get("payload_hash") or _stable_hash(source_document)
     return record_document(
@@ -412,11 +431,14 @@ def _scan_decision(
     market_probability = _market_probability(snapshot)
     estimated_probability = snapshot.get("estimated_probability")
     edge = _edge(estimated_probability, market_probability)
-    if market_probability is None or estimated_probability is None or edge is None:
+    if (
+        not _is_probability(market_probability)
+        or not _is_probability(estimated_probability)
+        or not _is_finite_number(edge)
+    ):
         return "watch", "insufficient_edge", ""
     min_edge = config.get("min_edge", DEFAULT_MIN_EDGE)
-    qualifies = bool(snapshot.get("qualifies")) or edge > min_edge
-    if not qualifies:
+    if not edge > min_edge:
         return "watch", "insufficient_edge", ""
 
     opportunity_id = record_opportunity(
@@ -463,6 +485,14 @@ def _edge(
     return estimated_probability - market_probability
 
 
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _is_probability(value: Any) -> bool:
+    return _is_finite_number(value) and 0 <= value <= 1
+
+
 def _market_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         row.get("venue", ""),
@@ -496,7 +526,14 @@ def _latest_timestamp_value(values: list[str]) -> str:
 def _latest_snapshot(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not snapshots:
         return None
-    return max(snapshots, key=lambda snapshot: snapshot.get("observed_at") or "")
+    return max(
+        snapshots,
+        key=lambda snapshot: (
+            _parse_timestamp(snapshot.get("observed_at", "")) or datetime.min.replace(
+                tzinfo=timezone.utc
+            )
+        ),
+    )
 
 
 def _current_snapshots(
@@ -557,16 +594,25 @@ def _has_link_confidence(
     opportunity: dict[str, Any],
     event_ids: list[str],
 ) -> bool:
-    for event_id in event_ids:
-        for link in list_event_market_links(conn, event_id=event_id):
-            if (
-                link["venue"] == opportunity["venue"]
-                and link["venue_market_id"] == opportunity["venue_market_id"]
-                and link["venue_contract_id"] == opportunity["venue_contract_id"]
-                and link["outcome_id"] == opportunity["outcome_id"]
-                and link["link_confidence"] is not None
-            ):
-                return True
+    return bool(event_ids) and all(
+        _event_has_matching_link(conn, opportunity, event_id) for event_id in event_ids
+    )
+
+
+def _event_has_matching_link(
+    conn,
+    opportunity: dict[str, Any],
+    event_id: str,
+) -> bool:
+    for link in list_event_market_links(conn, event_id=event_id):
+        if (
+            link["venue"] == opportunity["venue"]
+            and link["venue_market_id"] == opportunity["venue_market_id"]
+            and link["venue_contract_id"] == opportunity["venue_contract_id"]
+            and link["outcome_id"] == opportunity["outcome_id"]
+            and link["link_confidence"] is not None
+        ):
+            return True
     return False
 
 
