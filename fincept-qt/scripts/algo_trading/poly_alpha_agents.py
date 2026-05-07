@@ -58,6 +58,7 @@ def build_mock_agent_findings(
     document_ids = list(evidence_pack["document_ids"])
     primary_evidence_ids = document_ids[:1]
     counter_evidence_ids = document_ids[1:2]
+    run_scope = evidence_pack.get("run_id") or "no-run"
 
     common = {
         "run_id": evidence_pack.get("run_id", ""),
@@ -71,7 +72,7 @@ def build_mock_agent_findings(
     findings = [
         {
             **common,
-            "finding_id": f"finding-{evidence_pack['evidence_pack_id']}-researcher",
+            "finding_id": f"finding-{run_scope}-{evidence_pack['evidence_pack_id']}-researcher",
             "agent_role": "researcher",
             "confidence": 0.7,
             "recommendation": "shadow_signal" if edge > 0 else "watch",
@@ -83,7 +84,7 @@ def build_mock_agent_findings(
         },
         {
             **common,
-            "finding_id": f"finding-{evidence_pack['evidence_pack_id']}-critic",
+            "finding_id": f"finding-{run_scope}-{evidence_pack['evidence_pack_id']}-critic",
             "agent_role": "critic",
             "confidence": 0.55,
             "recommendation": "watch",
@@ -95,7 +96,7 @@ def build_mock_agent_findings(
         },
         {
             **common,
-            "finding_id": f"finding-{evidence_pack['evidence_pack_id']}-risk_reviewer",
+            "finding_id": f"finding-{run_scope}-{evidence_pack['evidence_pack_id']}-risk_reviewer",
             "agent_role": "risk_reviewer",
             "confidence": 0.6,
             "recommendation": "shadow_signal" if edge > 0 else "no_trade",

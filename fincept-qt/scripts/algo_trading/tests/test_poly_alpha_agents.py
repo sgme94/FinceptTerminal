@@ -144,3 +144,29 @@ def test_phase_1_mock_adapter_builds_deterministic_evidence_bounded_findings():
         assert finding["estimated_probability"] == pytest.approx(0.57)
         assert finding["edge"] == pytest.approx(0.15)
         assert set(finding["evidence_ids"]).issubset({"doc-a", "doc-b"})
+
+
+def test_mock_agent_finding_ids_are_scoped_by_run_id_and_deterministic():
+    first_run_pack = _evidence_pack(evidence_pack_id="pack-reused", run_id="run-1")
+    second_run_pack = _evidence_pack(evidence_pack_id="pack-reused", run_id="run-2")
+
+    first_run_findings = build_mock_agent_findings(
+        first_run_pack,
+        market_probability=0.42,
+        estimated_probability=0.57,
+    )
+    repeated_first_run_findings = build_mock_agent_findings(
+        first_run_pack,
+        market_probability=0.42,
+        estimated_probability=0.57,
+    )
+    second_run_findings = build_mock_agent_findings(
+        second_run_pack,
+        market_probability=0.42,
+        estimated_probability=0.57,
+    )
+
+    assert first_run_findings == repeated_first_run_findings
+    assert {finding["finding_id"] for finding in first_run_findings}.isdisjoint(
+        {finding["finding_id"] for finding in second_run_findings}
+    )
