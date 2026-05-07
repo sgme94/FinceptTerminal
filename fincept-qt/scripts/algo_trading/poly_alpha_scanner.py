@@ -38,6 +38,33 @@ def run_deterministic_scan(
     market_snapshots,
     now,
 ):
+    savepoint_name = "poly_alpha_deterministic_scan"
+    conn.execute(f"SAVEPOINT {savepoint_name}")
+    try:
+        result = _run_deterministic_scan(
+            conn,
+            strategy_version_id,
+            config,
+            source_documents,
+            market_snapshots,
+            now,
+        )
+    except Exception:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        raise
+    conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+    return result
+
+
+def _run_deterministic_scan(
+    conn,
+    strategy_version_id,
+    config,
+    source_documents,
+    market_snapshots,
+    now,
+):
     strategy = _strategy(conn, strategy_version_id)
     config_version_id = (
         config.get("config_version")
@@ -121,6 +148,7 @@ def build_evidence_pack(
     documents = _rows_by_ids(list_documents(conn), "document_id", document_ids)
     snapshots = _rows_by_ids(list_market_snapshots(conn), "snapshot_id", snapshot_ids)
     events = _rows_by_ids(list_events(conn), "event_id", event_ids)
+    _validate_evidence_market_consistency(opportunity, documents, snapshots)
 
     payload = {
         "opportunity_id": opportunity_id,
@@ -133,7 +161,7 @@ def build_evidence_pack(
             [*documents, *snapshots],
             "fetched_at",
         ),
-        "latest_observed_at": max(
+        "latest_observed_at": _latest_timestamp_value(
             [
                 value
                 for value in [
@@ -143,7 +171,6 @@ def build_evidence_pack(
                 ]
                 if value
             ],
-            default="",
         ),
     }
     payload_hash = _stable_hash(payload)
@@ -177,6 +204,7 @@ def decide_exploration(
 ):
     opportunity = _opportunity(conn, opportunity_id)
     evidence_pack = _evidence_pack(conn, evidence_pack_id)
+    _validate_evidence_pack_consistency(opportunity, evidence_pack)
     documents = _rows_by_ids(
         list_documents(conn),
         "document_id",
@@ -188,6 +216,7 @@ def decide_exploration(
         evidence_pack["snapshot_ids"],
     )
     events = _rows_by_ids(list_events(conn), "event_id", evidence_pack["event_ids"])
+    _validate_evidence_market_consistency(opportunity, documents, snapshots)
 
     merged_config = default_poly_alpha_config(config)
     historical_sample_count = int(merged_config.get("historical_sample_count", 0))
@@ -264,6 +293,40 @@ def _rows_by_ids(
     if missing_ids:
         raise ValueError(f"Unknown {id_key}: {missing_ids[0]}")
     return [by_id[requested_id] for requested_id in requested_ids]
+
+
+def _validate_evidence_pack_consistency(
+    opportunity: dict[str, Any],
+    evidence_pack: dict[str, Any],
+) -> None:
+    if evidence_pack["opportunity_id"] != opportunity["opportunity_id"]:
+        raise ValueError(
+            f"Evidence pack {evidence_pack['evidence_pack_id']} does not belong "
+            f"to opportunity_id {opportunity['opportunity_id']}"
+        )
+    if evidence_pack["strategy_version_id"] != opportunity["strategy_version_id"]:
+        raise ValueError(
+            "Evidence pack strategy_version_id does not match opportunity "
+            "strategy_version_id"
+        )
+
+
+def _validate_evidence_market_consistency(
+    opportunity: dict[str, Any],
+    documents: list[dict[str, Any]],
+    snapshots: list[dict[str, Any]],
+) -> None:
+    expected_market = _market_key(opportunity)
+    for document in documents:
+        if _market_key(document) != expected_market:
+            raise ValueError(
+                f"Document {document['document_id']} does not match opportunity market"
+            )
+    for snapshot in snapshots:
+        if _market_key(snapshot) != expected_market:
+            raise ValueError(
+                f"Snapshot {snapshot['snapshot_id']} does not match opportunity market"
+            )
 
 
 def _record_document(conn, source_document: dict[str, Any], now: str) -> str:
@@ -349,9 +412,10 @@ def _scan_decision(
     market_probability = _market_probability(snapshot)
     estimated_probability = snapshot.get("estimated_probability")
     edge = _edge(estimated_probability, market_probability)
-    qualifies = bool(snapshot.get("qualifies")) or (
-        edge is not None and edge > config.get("min_edge", DEFAULT_MIN_EDGE)
-    )
+    if market_probability is None or estimated_probability is None or edge is None:
+        return "watch", "insufficient_edge", ""
+    min_edge = config.get("min_edge", DEFAULT_MIN_EDGE)
+    qualifies = bool(snapshot.get("qualifies")) or edge > min_edge
     if not qualifies:
         return "watch", "insufficient_edge", ""
 
@@ -409,7 +473,24 @@ def _market_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
 
 
 def _latest(rows: list[dict[str, Any]], key: str) -> str:
-    return max([row[key] for row in rows if row.get(key)], default="")
+    return _latest_timestamp_value([row[key] for row in rows if row.get(key)])
+
+
+def _latest_timestamp_value(values: list[str]) -> str:
+    latest_value = ""
+    latest_parsed: datetime | None = None
+    unparsed_values = []
+    for value in values:
+        parsed = _parse_timestamp(value)
+        if parsed is None:
+            unparsed_values.append(value)
+            continue
+        if latest_parsed is None or parsed > latest_parsed:
+            latest_parsed = parsed
+            latest_value = value
+    if latest_value:
+        return latest_value
+    return max(unparsed_values, default="")
 
 
 def _latest_snapshot(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:

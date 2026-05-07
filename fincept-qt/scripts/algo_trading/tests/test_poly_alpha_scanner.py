@@ -28,6 +28,7 @@ from poly_alpha_store import (
     record_document,
     record_event,
     record_event_market_link,
+    record_evidence_pack,
     record_market_snapshot,
     record_opportunity,
     record_source_set,
@@ -107,7 +108,10 @@ def _snapshot(
     liquidity: float | None = 1200.0,
     top_bid_depth: float | None = 250.0,
     top_ask_depth: float | None = 220.0,
+    best_bid: float | None = 0.41,
+    best_ask: float | None = 0.43,
     mid_price: float | None = 0.42,
+    last_trade_price: float | None = 0.421,
     market_probability: float | None = 0.42,
     qualifies: bool = False,
     estimated_probability: float = 0.57,
@@ -124,13 +128,13 @@ def _snapshot(
         "observed_at": "2026-05-07T11:59:30Z",
         "fetched_at": "2026-05-07T11:59:35Z",
         "payload_hash": payload_hash if payload_hash is not None else f"hash-{snapshot_id}",
-        "best_bid": 0.41,
-        "best_ask": 0.43,
+        "best_bid": best_bid,
+        "best_ask": best_ask,
         "spread": spread,
         "top_bid_depth": top_bid_depth,
         "top_ask_depth": top_ask_depth,
         "mid_price": mid_price,
-        "last_trade_price": 0.421,
+        "last_trade_price": last_trade_price,
         "liquidity": liquidity,
         "volume": 5000.0,
         "raw_payload": {"id": snapshot_id},
@@ -176,6 +180,34 @@ def _insert_snapshot(conn: sqlite3.Connection, snapshot: dict) -> str:
         }
     }
     return record_market_snapshot(conn, created_at=NOW, **stored_snapshot)
+
+
+def _insert_opportunity(
+    conn: sqlite3.Connection,
+    opportunity_id: str,
+    venue_market_id: str,
+    *,
+    strategy_version_id: str = "strat-v1",
+) -> str:
+    return record_opportunity(
+        conn,
+        opportunity_id=opportunity_id,
+        strategy_version_id=strategy_version_id,
+        venue="polymarket",
+        venue_market_id=venue_market_id,
+        venue_contract_id=f"contract-{venue_market_id}",
+        outcome_id="yes",
+        title=f"Opportunity {venue_market_id}",
+        alpha_family="cross_market_probability",
+        status="watch",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.57,
+        edge=0.15,
+        confidence=0.72,
+        created_at=NOW,
+        updated_at=NOW,
+    )
 
 
 def _seed_full_evidence(
@@ -324,6 +356,76 @@ def test_scheduled_scan_groups_results_snapshots_and_opportunity_creation():
     assert opportunities[0]["edge"] == pytest.approx(0.15)
 
 
+def test_scan_qualifying_hint_requires_probability_and_edge_metrics():
+    conn = _conn()
+    _seed_versions(conn)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document("doc-no-edge", "market-no-edge")],
+        [
+            _snapshot(
+                "snap-no-edge",
+                "market-no-edge",
+                qualifies=True,
+                market_probability=None,
+                mid_price=None,
+                best_bid=None,
+                best_ask=None,
+                last_trade_price=None,
+                estimated_probability=None,
+            )
+        ],
+        NOW,
+    )
+
+    scan_results = list_scan_results(conn, result["scan_run_id"])
+    assert scan_results[0]["decision"] == "watch"
+    assert scan_results[0]["reason"] == "insufficient_edge"
+    assert scan_results[0]["created_opportunity_id"] == ""
+    assert result["opportunity_ids"] == []
+    assert list_opportunities(conn) == []
+
+
+def test_deterministic_scan_rolls_back_writes_on_failure():
+    conn = _conn()
+    _seed_versions(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        run_deterministic_scan(
+            conn,
+            "strat-v1",
+            {
+                "config_version": "cfg-v1",
+                "max_spread": 0.05,
+                "min_liquidity": 500.0,
+                "min_top_of_book_depth": 100.0,
+            },
+            [
+                _document("doc-good", "market-good"),
+                _document("doc-duplicate", "market-duplicate"),
+            ],
+            [
+                _snapshot("snap-duplicate", "market-good", qualifies=True),
+                _snapshot("snap-duplicate", "market-duplicate", qualifies=True),
+            ],
+            NOW,
+        )
+
+    assert list_scan_runs(conn) == []
+    assert list_scan_results(conn) == []
+    assert list_market_snapshots(conn) == []
+    assert list_documents(conn) == []
+    assert list_opportunities(conn) == []
+
+
 def test_build_evidence_pack_persists_citable_ids_and_latest_timestamps():
     conn = _conn()
     _seed_versions(conn)
@@ -407,6 +509,216 @@ def test_build_evidence_pack_persists_citable_ids_and_latest_timestamps():
     assert packs[0]["latest_fetched_at"] == "2026-05-07T11:10:00Z"
     assert packs[0]["latest_observed_at"] == "2026-05-07T11:09:00Z"
     assert packs[0]["payload_hash"]
+
+
+def test_build_evidence_pack_latest_timestamps_compare_offsets():
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-offset", "market-offset")
+    doc_utc = _insert_document(
+        conn,
+        {
+            **_document("doc-utc", "market-offset"),
+            "published_at": "2026-05-07T12:00:00Z",
+            "payload_hash": "hash-doc-utc",
+        },
+    )
+    doc_offset = _insert_document(
+        conn,
+        {
+            **_document("doc-offset", "market-offset"),
+            "published_at": "2026-05-07T09:30:00-04:00",
+            "payload_hash": "hash-doc-offset",
+        },
+    )
+    snapshot_id = _insert_snapshot(conn, _snapshot("snap-offset", "market-offset"))
+    event_id = record_event(
+        conn,
+        event_id="event-offset",
+        event_type="crypto_price",
+        title="BTC breaks level",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    evidence_pack_id = build_evidence_pack(
+        conn,
+        opportunity_id,
+        [doc_utc, doc_offset],
+        [snapshot_id],
+        [event_id],
+        NOW,
+    )
+
+    pack = list_evidence_packs(conn)[0]
+    assert pack["evidence_pack_id"] == evidence_pack_id
+    assert pack["latest_published_at"] == "2026-05-07T09:30:00-04:00"
+
+
+@pytest.mark.parametrize(
+    ("case", "document_market", "snapshot_market"),
+    [
+        ("cross_market_document", "market-other", "market-pack"),
+        ("cross_market_snapshot", "market-pack", "market-other"),
+    ],
+)
+def test_build_evidence_pack_rejects_cross_market_evidence(
+    case,
+    document_market,
+    snapshot_market,
+):
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-pack", "market-pack")
+    document_id = _insert_document(conn, _document(f"doc-{case}", document_market))
+    snapshot_id = _insert_snapshot(conn, _snapshot(f"snap-{case}", snapshot_market))
+    event_id = record_event(
+        conn,
+        event_id=f"event-{case}",
+        event_type="crypto_price",
+        title="BTC breaks level",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match="does not match opportunity market"):
+        build_evidence_pack(
+            conn,
+            opportunity_id,
+            [document_id],
+            [snapshot_id],
+            [event_id],
+            NOW,
+        )
+
+    assert list_evidence_packs(conn) == []
+
+
+def test_decide_exploration_rejects_pack_for_different_opportunity_without_side_effects():
+    conn = _conn()
+    _seed_versions(conn)
+    opp_a = _insert_opportunity(conn, "opp-a", "market-a")
+    opp_b = _insert_opportunity(conn, "opp-b", "market-b")
+    doc_b = _insert_document(conn, _document("doc-b", "market-b"))
+    snap_b = _insert_snapshot(conn, _snapshot("snap-b", "market-b"))
+    event_b = record_event(
+        conn,
+        event_id="event-b",
+        event_type="crypto_price",
+        title="BTC breaks level",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    record_event_market_link(
+        conn,
+        event_id=event_b,
+        venue="polymarket",
+        venue_market_id="market-b",
+        venue_contract_id="contract-market-b",
+        outcome_id="yes",
+        adapter_metadata={},
+        outcome="yes",
+        link_reason="same underlying event",
+        link_confidence=0.82,
+        created_at=NOW,
+    )
+    pack_b = build_evidence_pack(conn, opp_b, [doc_b], [snap_b], [event_b], NOW)
+
+    with pytest.raises(ValueError, match="does not belong to opportunity_id"):
+        decide_exploration(
+            conn,
+            opp_a,
+            pack_b,
+            default_poly_alpha_config({"historical_sample_count": 10}),
+            NOW,
+        )
+
+    assert list_exploration_decisions(conn) == []
+    statuses = {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)}
+    assert statuses == {"opp-a": "watch", "opp-b": "watch"}
+
+
+def test_decide_exploration_rejects_pack_strategy_mismatch_without_side_effects():
+    conn = _conn()
+    _seed_versions(conn)
+    record_strategy_version(
+        conn,
+        strategy_version_id="strat-v2",
+        strategy_family="cross_market_probability",
+        strategy_name="probability-lag",
+        version="2",
+        config_version_id="cfg-v1",
+        prompt_version="prompt-v1",
+        source_set_version="sources-v1",
+        description="phase 1 variant",
+        created_at=NOW,
+    )
+    opportunity_id = _insert_opportunity(conn, "opp-strategy", "market-strategy")
+    document_id = _insert_document(conn, _document("doc-strategy", "market-strategy"))
+    snapshot_id = _insert_snapshot(conn, _snapshot("snap-strategy", "market-strategy"))
+    event_id = record_event(
+        conn,
+        event_id="event-strategy",
+        event_type="crypto_price",
+        title="BTC breaks level",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    record_event_market_link(
+        conn,
+        event_id=event_id,
+        venue="polymarket",
+        venue_market_id="market-strategy",
+        venue_contract_id="contract-market-strategy",
+        outcome_id="yes",
+        adapter_metadata={},
+        outcome="yes",
+        link_reason="same underlying event",
+        link_confidence=0.82,
+        created_at=NOW,
+    )
+    evidence_pack_id = record_evidence_pack(
+        conn,
+        opportunity_id=opportunity_id,
+        strategy_version_id="strat-v2",
+        document_ids=[document_id],
+        snapshot_ids=[snapshot_id],
+        event_ids=[event_id],
+        source_set_version="sources-v1",
+        latest_published_at=NOW,
+        latest_fetched_at=NOW,
+        latest_observed_at=NOW,
+        created_at=NOW,
+        payload_hash="pack-strategy-mismatch",
+    )
+
+    with pytest.raises(ValueError, match="strategy_version_id"):
+        decide_exploration(
+            conn,
+            opportunity_id,
+            evidence_pack_id,
+            default_poly_alpha_config({"historical_sample_count": 10}),
+            NOW,
+        )
+
+    assert list_exploration_decisions(conn) == []
+    assert list_opportunities(conn)[0]["status"] == "watch"
 
 
 def test_decide_exploration_passes_with_phase_1_default_without_agent_findings():
