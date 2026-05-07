@@ -31,6 +31,9 @@ _LIVE_TRADING_KEYS = {
     "private_key",
 }
 
+_MIN_PROMOTION_SAMPLES_FLOOR = 30
+_MIN_PROMOTION_HISTORY_DAYS_FLOOR = 90
+
 
 def evaluate_promotion(
     conn: sqlite3.Connection,
@@ -77,8 +80,14 @@ def evaluate_promotion(
     metrics = {
         "sample_count": int(config.get("sample_count", 0)),
         "history_days": int(config.get("history_days", 0)),
-        "min_promotion_samples": int(config.get("min_promotion_samples", 30)),
-        "min_promotion_history_days": int(config.get("min_promotion_history_days", 90)),
+        "min_promotion_samples": max(
+            int(config.get("min_promotion_samples", _MIN_PROMOTION_SAMPLES_FLOOR)),
+            _MIN_PROMOTION_SAMPLES_FLOOR,
+        ),
+        "min_promotion_history_days": max(
+            int(config.get("min_promotion_history_days", _MIN_PROMOTION_HISTORY_DAYS_FLOOR)),
+            _MIN_PROMOTION_HISTORY_DAYS_FLOOR,
+        ),
         "max_drawdown_threshold": _number(config, "max_drawdown_threshold"),
         "min_hit_rate": _number(config, "min_hit_rate"),
         "min_payoff_ratio": _number(config, "min_payoff_ratio"),
@@ -265,13 +274,18 @@ def record_post_approval_skip(
     reason: str,
     now: str,
 ) -> bool:
-    _proposal_bridge(conn, proposal_id)
+    bridge = _proposal_bridge(conn, proposal_id)
+    if bridge["status"] != "approved":
+        return False
+    if bridge["features"].get("opportunity_id") != opportunity_id:
+        return False
     return update_opportunity_status(
         conn,
         opportunity_id=opportunity_id,
         lifecycle_event="paper_fill_skipped",
         primary_reason=reason,
         updated_at=now,
+        expected_status="approved",
         write_audit=True,
     )
 
@@ -327,10 +341,18 @@ def _gate_decision(
         return "reject", "survivorship_check_failed"
     if not risk_checks["risk_reviewer_approved"]:
         return "reject", "risk_reviewer_not_approved"
-    if prediction_metrics.get("brier_score") is None or prediction_metrics.get("calibration_error") is None:
+    if (
+        prediction_metrics.get("resolved_outcomes_exist", True)
+        and (
+            prediction_metrics.get("brier_score") is None
+            or prediction_metrics.get("calibration_error") is None
+        )
+    ):
         return "reject", "missing_resolved_prediction_metrics"
-    if prediction_metrics.get("edge_decay") is None:
+    if prediction_metrics.get("unresolved_markets_exist", True) and prediction_metrics.get("edge_decay") is None:
         return "reject", "missing_unresolved_edge_decay"
+    if not trading_metrics.get("approval_latency_impact"):
+        return "reject", "missing_approval_latency_impact"
     if trading_metrics["cost_adjusted_net_return"] <= 0:
         return "reject", "non_positive_net_return"
     if trading_metrics["median_clv_after_costs"] <= 0:
@@ -353,6 +375,12 @@ def _gate_decision(
 
 
 def _prediction_metrics(validations: list[dict], config: dict[str, Any]) -> dict:
+    resolved_outcomes_exist = bool(
+        config["resolved_outcomes_exist"]
+        if "resolved_outcomes_exist" in config
+        else validations
+    )
+    unresolved_markets_exist = bool(config.get("unresolved_markets_exist", True))
     resolved = [
         row for row in validations if row.get("brier_score") is not None and row.get("calibration_error") is not None
     ]
@@ -367,6 +395,8 @@ def _prediction_metrics(validations: list[dict], config: dict[str, Any]) -> dict
         "brier_score": brier_score,
         "calibration_error": calibration_error,
         "edge_decay": unresolved_edge_decay,
+        "resolved_outcomes_exist": resolved_outcomes_exist,
+        "unresolved_markets_exist": unresolved_markets_exist,
     }
 
 
@@ -384,7 +414,7 @@ def _unresolved_critic_blockers(conn: sqlite3.Connection, opportunity_id: str) -
 def _proposal_bridge(conn: sqlite3.Connection, proposal_id: str) -> dict:
     row = conn.execute(
         """
-        SELECT deployment_id, strategy_id, features_json
+        SELECT deployment_id, strategy_id, features_json, status
         FROM algo_polymarket_trade_proposals
         WHERE proposal_id = ?
         """,
@@ -400,6 +430,7 @@ def _proposal_bridge(conn: sqlite3.Connection, proposal_id: str) -> dict:
         "strategy_id": row[1],
         "opportunity_id": features["opportunity_id"],
         "features": features,
+        "status": row[3],
     }
 
 

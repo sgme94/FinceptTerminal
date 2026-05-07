@@ -184,6 +184,100 @@ def test_promotion_gate_promotes_and_records_required_metrics():
     assert list_shadow_signals(conn)[0]["status"] == "promoted"
 
 
+def test_promotion_gate_enforces_hard_coverage_floor_and_allows_90_days():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(
+        conn,
+        "shadow-promo",
+        _passing_config(min_promotion_samples=1, min_promotion_history_days=1, sample_count=1, history_days=10),
+        NOW,
+    )
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "watch"
+    assert decision["reason"] == "insufficient_promotion_coverage"
+
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    evaluate_promotion(
+        conn,
+        "shadow-promo",
+        _passing_config(min_promotion_samples=1, min_promotion_history_days=1, sample_count=1, history_days=90),
+        NOW,
+    )
+
+    assert list_promotion_decisions(conn)[0]["decision"] == "promote"
+
+
+@pytest.mark.parametrize("override", [{"approval_latency_impact": None}, {}])
+def test_promotion_gate_rejects_missing_approval_latency_impact(override):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    config = _passing_config()
+    if override:
+        config.update(override)
+    else:
+        config.pop("approval_latency_impact")
+
+    evaluate_promotion(conn, "shadow-promo", config, NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "missing_approval_latency_impact"
+
+
+def test_promotion_gate_requires_resolved_prediction_metrics_only_when_resolved_outcomes_exist():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    conn.execute(
+        """
+        UPDATE poly_alpha_validation_results
+        SET brier_score = NULL, calibration_error = NULL
+        """
+    )
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(resolved_outcomes_exist=False), NOW)
+
+    assert list_promotion_decisions(conn)[0]["decision"] == "promote"
+
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    conn.execute(
+        """
+        UPDATE poly_alpha_validation_results
+        SET brier_score = NULL, calibration_error = NULL
+        """
+    )
+    evaluate_promotion(conn, "shadow-promo", _passing_config(resolved_outcomes_exist=True), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "missing_resolved_prediction_metrics"
+
+
+def test_promotion_gate_requires_edge_decay_only_when_unresolved_markets_exist():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    config = _passing_config(unresolved_markets_exist=False)
+    config.pop("unresolved_metrics")
+
+    evaluate_promotion(conn, "shadow-promo", config, NOW)
+
+    assert list_promotion_decisions(conn)[0]["decision"] == "promote"
+
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    config = _passing_config(unresolved_markets_exist=True)
+    config.pop("unresolved_metrics")
+    evaluate_promotion(conn, "shadow-promo", config, NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "missing_unresolved_edge_decay"
+
+
 @pytest.mark.parametrize(
     ("override", "expected_decision", "reason"),
     [
@@ -351,6 +445,49 @@ def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit
     assert list_opportunities(conn)[0]["primary_reason"] == "approval_latency_risk"
     assert "paper_fill_skipped" in [row["action"] for row in list_poly_alpha_audit_events(conn)]
     assert list_trade_proposals(conn, "dep-1")[0]["fill_trade_id"] == ""
+
+
+def test_post_approval_skip_requires_approved_proposal():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+
+    assert record_post_approval_skip(conn, "opp-promo", proposal_id, "approval_latency_risk", NOW) is False
+    assert list_opportunities(conn)[0]["status"] == "proposed"
+
+
+def test_post_approval_skip_requires_matching_opportunity_id():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    record_opportunity(
+        conn,
+        opportunity_id="opp-wrong",
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id="market-2",
+        venue_contract_id="condition-2",
+        outcome_id="yes",
+        title="Wrong candidate",
+        alpha_family="cross_market_probability",
+        status="watch",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+
+    assert record_post_approval_skip(conn, "opp-wrong", proposal_id, "approval_latency_risk", NOW) is False
+
+    statuses = {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)}
+    assert statuses["opp-promo"] == "approved"
+    assert statuses["opp-wrong"] == "watch"
 
 
 @pytest.mark.parametrize("live_key", ["private_key", "api_secret", "clob_client", "order_endpoint", "live_trading"])
