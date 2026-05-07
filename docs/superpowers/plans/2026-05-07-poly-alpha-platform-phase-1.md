@@ -170,7 +170,8 @@ Also add a table-driven test for every required transition:
         ("proposal_approved", "approved", "promoted", "promote"),
         ("paper_fill_skipped", "skipped", "promoted", "promote"),
         ("paper_fill_recorded", "filled", "promoted", "promote"),
-        ("ttl_expired", "expired", "expired", None),
+        ("signal_ttl_expired", "expired", "expired", None),
+        ("proposal_ttl_expired", "expired", "promoted", "promote"),
     ],
 )
 def test_lifecycle_transition_table(event, opportunity_status, shadow_signal_status, promotion_decision):
@@ -178,6 +179,30 @@ def test_lifecycle_transition_table(event, opportunity_status, shadow_signal_sta
     assert state.opportunity_status == opportunity_status
     assert state.shadow_signal_status == shadow_signal_status
     assert state.promotion_decision == promotion_decision
+```
+
+Add explicit previous-state tests for TTL behavior:
+
+```python
+def test_proposal_ttl_expired_does_not_expire_promoted_signal_state():
+    state = apply_opportunity_transition(
+        "proposal_ttl_expired",
+        previous_shadow_signal_status="promoted",
+        previous_promotion_decision="promote",
+    )
+    assert state.opportunity_status == "expired"
+    assert state.shadow_signal_status == "promoted"
+    assert state.promotion_decision == "promote"
+
+def test_watch_opportunity_ttl_expired_preserves_missing_signal_state():
+    state = apply_opportunity_transition(
+        "opportunity_ttl_expired",
+        previous_shadow_signal_status=None,
+        previous_promotion_decision=None,
+    )
+    assert state.opportunity_status == "expired"
+    assert state.shadow_signal_status is None
+    assert state.promotion_decision is None
 ```
 
 - [ ] **Step 3: Run the failing model tests**
@@ -198,7 +223,7 @@ Implement:
 - `default_poly_alpha_config(overrides: dict | None = None) -> dict`
 - status/reason constants
 - `LifecycleState` dataclass
-- `apply_opportunity_transition(event: str) -> LifecycleState`
+- `apply_opportunity_transition(event: str, previous_shadow_signal_status: str | None = None, previous_promotion_decision: str | None = None) -> LifecycleState`
 
 Keep this file deterministic and dependency-free.
 
@@ -277,6 +302,7 @@ Assert:
 - evidence packs cite documents and snapshots.
 - exploration decisions update status expectations.
 - exploration decisions map to `exploration_passed`, `exploration_watch`, or `exploration_rejected`.
+- lifecycle event names map to audit action names through a documented helper, for example `exploration_pass` -> `exploration_passed`, `validation_pass` -> `validation_completed`, `promotion_promote` -> `promotion_promoted`, and TTL events -> `expired`.
 - shadow signals use allowed status values.
 - shadow signal creation maps to `shadow_signal_created`.
 - `paper_fill_skipped` can update opportunity status and write audit-compatible output.
@@ -313,6 +339,7 @@ Implement focused helpers:
 - `record_shadow_signal(conn, ...)`
 - `record_validation_result(conn, ...)`
 - `record_promotion_decision(conn, ...)`
+- `audit_action_for_lifecycle_event(event: str) -> str`
 - list helpers used by API.
 
 Use JSON strings for `*_json` fields, matching existing `polymarket_store.py` style.
@@ -362,7 +389,11 @@ Assert:
 
 Assert:
 
-- `pass` only when evidence pack has source metadata and at least one current snapshot.
+- `pass` only when `historical_sample_count >= config["min_exploration_samples"]` and the Phase 1 default minimum is `10`.
+- `pass` only when evidence pack has source metadata, fetched timestamps, payload hashes, and at least one current snapshot.
+- `pass` only when event-market link confidence is recorded.
+- `pass` only when current market probability, spread, depth, and liquidity metrics are recorded.
+- `pass` only when deterministic evidence completeness metrics are recorded.
 - `watch` keeps opportunity status `watch`.
 - `reject` sets opportunity status `rejected`.
 - no agent findings are required for Exploration Gate.
@@ -382,6 +413,8 @@ Implement:
 - `run_deterministic_scan(conn, strategy_version_id, config, source_documents, market_snapshots, now)`
 - `build_evidence_pack(conn, opportunity_id, document_ids, snapshot_ids, event_ids, now)`
 - `decide_exploration(conn, opportunity_id, evidence_pack_id, config, now)`
+
+`decide_exploration(...)` must evaluate the same deterministic fields the tests assert: sample count, source metadata, current snapshot presence, event-market link confidence, market probability/spread/depth/liquidity metrics, and evidence completeness metrics. It must not require agent findings, profitability, or external LLM output.
 
 No network calls in this module. Tests should pass fixtures/data dictionaries.
 
@@ -469,6 +502,7 @@ Assert validation computes:
 - `fetch_lag_sec`
 - `market_move_before_signal`
 - `market_move_after_signal`
+- `late_information` reason when most of the cited information move happened before `shadow_signal.created_at`.
 
 - [ ] **Step 3: Write failing exit template tests**
 
@@ -533,6 +567,7 @@ Assert promotion requires:
 - capacity >= 2x paper order size
 - no unresolved Critic blocker
 - Risk Reviewer approval.
+- event-time validation does not have a blocking `late_information` reason.
 
 - [ ] **Step 2: Write failing tests for watch/reject/promote lifecycle**
 
@@ -625,6 +660,7 @@ Add tests for:
 
 Add tests for:
 
+- manual research task trigger, for example `POST /api/poly-alpha/research-runs/manual`
 - deterministic scan trigger
 - evidence pack build
 - exploration decision
