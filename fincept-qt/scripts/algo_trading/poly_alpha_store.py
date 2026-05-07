@@ -37,6 +37,9 @@ _LIFECYCLE_AUDIT_ACTIONS = {
     "promotion_promote": "promotion_approved",
     "promotion_reject": "promotion_rejected",
     "promotion_watch": "promotion_watch",
+    "proposal_created": "proposal_created",
+    "proposal_approved": "proposal_approved",
+    "proposal_rejected": "proposal_rejected",
     "paper_fill_recorded": "paper_fill_recorded",
     "paper_fill_skipped": "paper_fill_skipped",
     "signal_ttl_expired": "expired",
@@ -1007,6 +1010,14 @@ def update_opportunity_status(
         raise ValueError("Opportunity status or lifecycle_event is required")
     _require_opportunity_status(status)
 
+    audit_action = ""
+    if write_audit:
+        audit_action = (
+            audit_action_for_lifecycle_event(lifecycle_event)
+            if lifecycle_event is not None
+            else "opportunity_status_updated"
+        )
+
     conn.execute(
         """
         UPDATE poly_alpha_opportunities
@@ -1018,14 +1029,9 @@ def update_opportunity_status(
         (status, primary_reason, primary_reason, updated_at, opportunity_id),
     )
     if write_audit:
-        action = (
-            audit_action_for_lifecycle_event(lifecycle_event)
-            if lifecycle_event is not None
-            else "opportunity_status_updated"
-        )
         _record_audit_event(
             conn,
-            action=action,
+            action=audit_action,
             entity_type="opportunity",
             entity_id=opportunity_id,
             strategy_version_id=row[2],
@@ -1346,6 +1352,15 @@ def record_shadow_signal(
             expires_at,
         ),
     )
+    transition = apply_opportunity_transition("shadow_signal_created")
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = ?, updated_at = ?
+        WHERE opportunity_id = ?
+        """,
+        (transition.opportunity_status, created_at, opportunity_id),
+    )
     if write_audit:
         _record_audit_event(
             conn,
@@ -1436,8 +1451,33 @@ def record_validation_result(
             created_at,
         ),
     )
+    lifecycle_event = "validation_pass" if pass_fail == "pass" else "validation_fail"
+    transition = apply_opportunity_transition(lifecycle_event)
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = ?,
+            primary_reason = CASE WHEN ? = '' THEN primary_reason ELSE ? END,
+            updated_at = ?
+        WHERE opportunity_id = ?
+        """,
+        (
+            transition.opportunity_status,
+            failure_reason,
+            failure_reason,
+            created_at,
+            opportunity_id,
+        ),
+    )
+    conn.execute(
+        """
+        UPDATE poly_alpha_shadow_signals
+        SET status = ?
+        WHERE shadow_signal_id = ?
+        """,
+        (transition.shadow_signal_status, shadow_signal_id),
+    )
     if write_audit:
-        lifecycle_event = "validation_pass" if pass_fail == "pass" else "validation_fail"
         _record_audit_event(
             conn,
             action=audit_action_for_lifecycle_event(lifecycle_event),
@@ -1498,6 +1538,23 @@ def record_promotion_decision(
             proposal_id,
             decided_at,
         ),
+    )
+    transition = apply_opportunity_transition(f"promotion_{decision}")
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = ?, updated_at = ?
+        WHERE opportunity_id = ?
+        """,
+        (transition.opportunity_status, decided_at, opportunity_id),
+    )
+    conn.execute(
+        """
+        UPDATE poly_alpha_shadow_signals
+        SET status = ?
+        WHERE shadow_signal_id = ?
+        """,
+        (transition.shadow_signal_status, shadow_signal_id),
     )
     if write_audit:
         _record_audit_event(

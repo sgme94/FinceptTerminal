@@ -567,6 +567,9 @@ def test_lifecycle_audit_mapping_and_shadow_validation_promotion_helpers():
         expires_at="2026-05-08T00:00:00Z",
         write_audit=True,
     )
+    assert list_opportunities(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
     validation_id = record_validation_result(
         conn,
         opportunity_id=opportunity_id,
@@ -597,6 +600,9 @@ def test_lifecycle_audit_mapping_and_shadow_validation_promotion_helpers():
         created_at=NOW,
         write_audit=True,
     )
+    assert list_opportunities(conn)[0]["status"] == "validated"
+    assert list_shadow_signals(conn)[0]["status"] == "validated"
+
     promotion_id = record_promotion_decision(
         conn,
         opportunity_id=opportunity_id,
@@ -613,13 +619,16 @@ def test_lifecycle_audit_mapping_and_shadow_validation_promotion_helpers():
         decided_at=NOW,
         write_audit=True,
     )
+    assert list_opportunities(conn)[0]["status"] == "promoted"
+    assert list_shadow_signals(conn)[0]["status"] == "promoted"
+
     skipped = update_opportunity_status(
         conn,
         opportunity_id=opportunity_id,
         lifecycle_event="paper_fill_skipped",
         primary_reason="approval_latency_risk",
         updated_at=NOW,
-        expected_status="approved",
+        expected_status="promoted",
         write_audit=True,
     )
 
@@ -631,11 +640,14 @@ def test_lifecycle_audit_mapping_and_shadow_validation_promotion_helpers():
     assert audit_action_for_lifecycle_event("signal_ttl_expired") == "expired"
     assert audit_action_for_lifecycle_event("proposal_ttl_expired") == "expired"
     assert audit_action_for_lifecycle_event("opportunity_ttl_expired") == "expired"
+    assert audit_action_for_lifecycle_event("proposal_created") == "proposal_created"
+    assert audit_action_for_lifecycle_event("proposal_approved") == "proposal_approved"
+    assert audit_action_for_lifecycle_event("proposal_rejected") == "proposal_rejected"
     assert audit_action_for_lifecycle_event("paper_fill_skipped") == "paper_fill_skipped"
 
     assert skipped is True
     assert list_shadow_signals(conn)[0]["shadow_signal_id"] == shadow_signal_id
-    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "promoted"
     assert list_shadow_signals(conn)[0]["adapter_metadata"] == {"asset_id": "asset-1"}
     assert list_validation_results(conn)[0]["validation_id"] == validation_id
     assert list_validation_results(conn)[0]["pass_fail"] == "pass"
@@ -674,3 +686,230 @@ def test_lifecycle_audit_mapping_and_shadow_validation_promotion_helpers():
             created_at=NOW,
             expires_at="2026-05-08T00:00:00Z",
         )
+
+
+@pytest.mark.parametrize(
+    ("pass_fail", "expected_opportunity_status", "expected_signal_status"),
+    [
+        ("pass", "validated", "validated"),
+        ("fail", "rejected", "rejected"),
+    ],
+)
+def test_validation_results_update_opportunity_and_shadow_signal_status(
+    pass_fail,
+    expected_opportunity_status,
+    expected_signal_status,
+):
+    conn = _conn()
+    opportunity_id = record_opportunity(
+        conn,
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id=f"market-validation-{pass_fail}",
+        venue_contract_id=f"contract-validation-{pass_fail}",
+        outcome_id="yes",
+        title=f"Validation {pass_fail}",
+        alpha_family="cross_market_probability",
+        status="watch",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    run_id = record_research_run(
+        conn,
+        trigger_type="manual_task",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="pack-1",
+        strategy_version_id="strat-v1",
+        event_id="event-1",
+        venue="polymarket",
+        venue_market_id=f"market-validation-{pass_fail}",
+        requested_by="user",
+        started_at=NOW,
+        status="running",
+        model_config={},
+        created_at=NOW,
+    )
+    shadow_signal_id = record_shadow_signal(
+        conn,
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id=f"market-validation-{pass_fail}",
+        venue_contract_id=f"contract-validation-{pass_fail}",
+        outcome_id="yes",
+        adapter_metadata={},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="shadow",
+        created_at=NOW,
+        expires_at="2026-05-08T00:00:00Z",
+    )
+
+    record_validation_result(
+        conn,
+        opportunity_id=opportunity_id,
+        shadow_signal_id=shadow_signal_id,
+        strategy_version_id="strat-v1",
+        entry_snapshot_id="snap-entry",
+        exit_snapshot_id="snap-exit",
+        validation_type="fixed_horizon",
+        entry_price=0.42,
+        exit_price=0.48,
+        holding_period="1h",
+        gross_return=0.14,
+        cost_adjusted_return=0.12,
+        closing_line_value=0.05,
+        brier_score=0.21,
+        calibration_error=0.02,
+        edge_decay=0.01,
+        information_lag_sec=30,
+        fetch_lag_sec=5,
+        market_move_before_signal=0.01,
+        market_move_after_signal=0.06,
+        max_adverse_excursion=-0.02,
+        max_favorable_excursion=0.08,
+        liquidity_assumption="top_of_book",
+        slippage_assumption="one_tick",
+        pass_fail=pass_fail,
+        failure_reason="" if pass_fail == "pass" else "failed_validation",
+        created_at=NOW,
+    )
+
+    assert list_opportunities(conn)[0]["status"] == expected_opportunity_status
+    assert list_shadow_signals(conn)[0]["status"] == expected_signal_status
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected_opportunity_status", "expected_signal_status"),
+    [
+        ("promote", "promoted", "promoted"),
+        ("reject", "rejected", "rejected"),
+        ("watch", "validated", "validated"),
+    ],
+)
+def test_promotion_decisions_update_opportunity_and_shadow_signal_status(
+    decision,
+    expected_opportunity_status,
+    expected_signal_status,
+):
+    conn = _conn()
+    opportunity_id = record_opportunity(
+        conn,
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id=f"market-promotion-{decision}",
+        venue_contract_id=f"contract-promotion-{decision}",
+        outcome_id="yes",
+        title=f"Promotion {decision}",
+        alpha_family="cross_market_probability",
+        status="validated",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    run_id = record_research_run(
+        conn,
+        trigger_type="manual_task",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="pack-1",
+        strategy_version_id="strat-v1",
+        event_id="event-1",
+        venue="polymarket",
+        venue_market_id=f"market-promotion-{decision}",
+        requested_by="user",
+        started_at=NOW,
+        status="running",
+        model_config={},
+        created_at=NOW,
+    )
+    shadow_signal_id = record_shadow_signal(
+        conn,
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id=f"market-promotion-{decision}",
+        venue_contract_id=f"contract-promotion-{decision}",
+        outcome_id="yes",
+        adapter_metadata={},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="validated",
+        created_at=NOW,
+        expires_at="2026-05-08T00:00:00Z",
+    )
+
+    record_promotion_decision(
+        conn,
+        opportunity_id=opportunity_id,
+        shadow_signal_id=shadow_signal_id,
+        strategy_version_id="strat-v1",
+        decision=decision,
+        reason="gate_result",
+        prediction_metrics={},
+        trading_metrics={},
+        metrics={},
+        critic_blockers=[],
+        risk_checks={"paper_only": True},
+        proposal_id="",
+        decided_at=NOW,
+    )
+
+    assert list_opportunities(conn)[0]["status"] == expected_opportunity_status
+    assert list_shadow_signals(conn)[0]["status"] == expected_signal_status
+
+
+def test_proposal_lifecycle_event_updates_opportunity_and_writes_audit():
+    conn = _conn()
+    opportunity_id = record_opportunity(
+        conn,
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id="market-proposal",
+        venue_contract_id="contract-proposal",
+        outcome_id="yes",
+        title="Proposal candidate",
+        alpha_family="cross_market_probability",
+        status="promoted",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    updated = update_opportunity_status(
+        conn,
+        opportunity_id=opportunity_id,
+        lifecycle_event="proposal_created",
+        updated_at=NOW,
+        expected_status="promoted",
+        write_audit=True,
+    )
+
+    assert updated is True
+    assert list_opportunities(conn)[0]["status"] == "proposed"
+    audit = list_poly_alpha_audit_events(conn)
+    assert len(audit) == 1
+    assert audit[0]["action"] == "proposal_created"
+    assert audit[0]["entity_id"] == opportunity_id
