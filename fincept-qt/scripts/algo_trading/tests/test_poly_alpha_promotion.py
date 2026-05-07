@@ -161,6 +161,28 @@ def _passing_config(**overrides):
     return config
 
 
+def _seed_wrong_opportunity(conn: sqlite3.Connection) -> None:
+    record_opportunity(
+        conn,
+        opportunity_id="opp-wrong",
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id="market-2",
+        venue_contract_id="condition-2",
+        outcome_id="yes",
+        title="Wrong candidate",
+        alpha_family="cross_market_probability",
+        status="watch",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
 def test_promotion_gate_promotes_and_records_required_metrics():
     conn = _conn()
     opportunity_id, shadow_signal_id = _seed_validated_shadow(conn)
@@ -460,25 +482,7 @@ def test_post_approval_skip_requires_approved_proposal():
 def test_post_approval_skip_requires_matching_opportunity_id():
     conn = _conn()
     _seed_validated_shadow(conn)
-    record_opportunity(
-        conn,
-        opportunity_id="opp-wrong",
-        strategy_version_id="strat-v1",
-        venue="polymarket",
-        venue_market_id="market-2",
-        venue_contract_id="condition-2",
-        outcome_id="yes",
-        title="Wrong candidate",
-        alpha_family="cross_market_probability",
-        status="watch",
-        primary_reason="",
-        market_probability=0.42,
-        estimated_probability=0.55,
-        edge=0.13,
-        confidence=0.7,
-        created_at=NOW,
-        updated_at=NOW,
-    )
+    _seed_wrong_opportunity(conn)
     promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
     proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
     assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
@@ -490,10 +494,70 @@ def test_post_approval_skip_requires_matching_opportunity_id():
     assert statuses["opp-wrong"] == "watch"
 
 
-@pytest.mark.parametrize("live_key", ["private_key", "api_secret", "clob_client", "order_endpoint", "live_trading"])
+def test_paper_fill_requires_matching_opportunity_id_without_half_success():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    _seed_wrong_opportunity(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+
+    assert record_paper_fill_recorded(conn, "opp-wrong", proposal_id, "trade-1", NOW) is False
+
+    statuses = {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)}
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert statuses["opp-promo"] == "approved"
+    assert statuses["opp-wrong"] == "watch"
+    assert proposal["status"] == "approved"
+    assert proposal["fill_trade_id"] == ""
+
+
+def test_paper_fill_does_not_fill_proposal_when_opportunity_update_would_fail():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = 'proposed'
+        WHERE opportunity_id = 'opp-promo'
+        """
+    )
+
+    assert record_paper_fill_recorded(conn, "opp-promo", proposal_id, "trade-1", NOW) is False
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert list_opportunities(conn)[0]["status"] == "proposed"
+    assert proposal["status"] == "approved"
+    assert proposal["fill_trade_id"] == ""
+
+
+@pytest.mark.parametrize(
+    "live_key",
+    [
+        "api_key",
+        "api_passphrase",
+        "api_secret",
+        "authenticated_clob_client",
+        "clob_api_key",
+        "clob_api_passphrase",
+        "clob_api_secret",
+        "clob_client",
+        "clob_order_client",
+        "clob_order_endpoint",
+        "live_order_endpoint",
+        "live_trading",
+        "order_client",
+        "order_endpoint",
+        "private_key",
+    ],
+)
 def test_live_trading_fields_are_rejected(live_key):
     conn = _conn()
     _seed_validated_shadow(conn)
 
+    config = _passing_config(nested=[{"safe": [{"live": {live_key: "bad"}}]}])
     with pytest.raises(ValueError, match="live trading fields"):
-        evaluate_promotion(conn, "shadow-promo", _passing_config(**{live_key: "bad"}), NOW)
+        evaluate_promotion(conn, "shadow-promo", config, NOW)

@@ -22,11 +22,19 @@ from polymarket_store import (
 
 
 _LIVE_TRADING_KEYS = {
+    "api_key",
+    "api_passphrase",
     "api_secret",
     "authenticated_clob_client",
+    "clob_api_key",
+    "clob_api_passphrase",
+    "clob_api_secret",
     "clob_client",
+    "clob_order_client",
+    "clob_order_endpoint",
     "live_order_endpoint",
     "live_trading",
+    "order_client",
     "order_endpoint",
     "private_key",
 }
@@ -298,6 +306,18 @@ def record_paper_fill_recorded(
     now: str,
 ) -> bool:
     bridge = _proposal_bridge(conn, proposal_id)
+    if bridge["features"].get("opportunity_id") != opportunity_id:
+        return False
+    opportunity = _one(
+        [
+            row
+            for row in list_opportunities(conn)
+            if row["opportunity_id"] == opportunity_id
+        ],
+        f"Unknown opportunity_id: {opportunity_id}",
+    )
+    if opportunity["status"] != "approved":
+        return False
     updated = update_trade_proposal_status(
         conn,
         proposal_id,
