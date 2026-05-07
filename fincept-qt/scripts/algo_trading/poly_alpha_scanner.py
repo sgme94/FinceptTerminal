@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from poly_alpha_config import default_poly_alpha_config
@@ -191,9 +192,16 @@ def decide_exploration(
     merged_config = default_poly_alpha_config(config)
     historical_sample_count = int(merged_config.get("historical_sample_count", 0))
     min_exploration_samples = int(merged_config["min_exploration_samples"])
-    current_snapshot = _latest_snapshot(snapshots)
+    snapshot_freshness_sec = int(
+        merged_config.get(
+            "exploration_snapshot_freshness_sec",
+            merged_config["validation_freshness_window_sec"],
+        )
+    )
+    current_snapshots = _current_snapshots(snapshots, now, snapshot_freshness_sec)
+    current_snapshot = _latest_snapshot(current_snapshots)
     evidence_completeness = _evidence_completeness(documents, snapshots, events)
-    current_market_metrics = _current_market_metrics(opportunity, current_snapshot)
+    current_market_metrics = _current_market_metrics(current_snapshot)
     metrics = {
         "historical_sample_count": historical_sample_count,
         "min_exploration_samples": min_exploration_samples,
@@ -202,7 +210,8 @@ def decide_exploration(
             opportunity,
             evidence_pack["event_ids"],
         ),
-        "current_snapshot_count": len(snapshots),
+        "snapshot_freshness_sec": snapshot_freshness_sec,
+        "current_snapshot_count": len(current_snapshots),
         "current_market_metrics": current_market_metrics,
         "evidence_completeness": evidence_completeness,
         "evidence_completeness_metrics_recorded": True,
@@ -409,6 +418,25 @@ def _latest_snapshot(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
     return max(snapshots, key=lambda snapshot: snapshot.get("observed_at") or "")
 
 
+def _current_snapshots(
+    snapshots: list[dict[str, Any]],
+    now: str,
+    freshness_sec: int,
+) -> list[dict[str, Any]]:
+    now_dt = _parse_timestamp(now)
+    if now_dt is None:
+        return []
+    oldest_allowed = now_dt - timedelta(seconds=freshness_sec)
+    current = []
+    for snapshot in snapshots:
+        observed_at = _parse_timestamp(snapshot.get("observed_at", ""))
+        if observed_at is None:
+            continue
+        if oldest_allowed <= observed_at <= now_dt:
+            current.append(snapshot)
+    return current
+
+
 def _evidence_completeness(
     documents: list[dict[str, Any]],
     snapshots: list[dict[str, Any]],
@@ -419,7 +447,8 @@ def _evidence_completeness(
         "snapshot_count": len(snapshots),
         "event_count": len(events),
         "source_metadata_complete": bool(documents)
-        and all(_has_source_metadata(document) for document in documents),
+        and all(_has_source_metadata(document) for document in documents)
+        and all(_has_snapshot_source_metadata(snapshot) for snapshot in snapshots),
         "fetched_timestamps_complete": bool(documents)
         and all(document.get("fetched_at") for document in documents)
         and all(snapshot.get("fetched_at") for snapshot in snapshots),
@@ -436,6 +465,10 @@ def _has_source_metadata(document: dict[str, Any]) -> bool:
         and (document.get("url") or document.get("api_endpoint"))
         and document.get("trust_level")
     )
+
+
+def _has_snapshot_source_metadata(snapshot: dict[str, Any]) -> bool:
+    return bool(snapshot.get("source_api"))
 
 
 def _has_link_confidence(
@@ -457,19 +490,18 @@ def _has_link_confidence(
 
 
 def _current_market_metrics(
-    opportunity: dict[str, Any],
     snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if snapshot is None:
         return {
-            "market_probability": opportunity["market_probability"],
+            "market_probability": None,
             "spread": None,
             "top_bid_depth": None,
             "top_ask_depth": None,
             "liquidity": None,
         }
     return {
-        "market_probability": opportunity["market_probability"],
+        "market_probability": _market_probability(snapshot),
         "spread": snapshot["spread"],
         "top_bid_depth": snapshot["top_bid_depth"],
         "top_ask_depth": snapshot["top_ask_depth"],
@@ -501,3 +533,15 @@ def _exploration_decision(metrics: dict[str, Any]) -> tuple[str, str]:
 def _stable_hash(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

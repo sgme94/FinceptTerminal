@@ -411,7 +411,10 @@ def test_build_evidence_pack_persists_citable_ids_and_latest_timestamps():
 
 def test_decide_exploration_passes_with_phase_1_default_without_agent_findings():
     conn = _conn()
-    opportunity_id, evidence_pack_id = _seed_full_evidence(conn)
+    opportunity_id, evidence_pack_id = _seed_full_evidence(
+        conn,
+        market_probability=0.99,
+    )
     config = default_poly_alpha_config({"historical_sample_count": 10})
 
     exploration_id = decide_exploration(
@@ -539,13 +542,55 @@ def test_decide_exploration_passes_with_phase_1_default_without_agent_findings()
             "missing_market_probability",
             10,
             None,
-            None,
+            {
+                "market_probability": None,
+                "mid_price": None,
+                "best_bid": None,
+                "best_ask": None,
+                "last_trade_price": None,
+            },
             True,
             True,
-            None,
+            0.42,
             "reject",
             "rejected",
             "missing_market_metrics",
+        ),
+        (
+            "stale_snapshot",
+            10,
+            None,
+            {"observed_at": "2026-05-07T11:54:59Z"},
+            True,
+            True,
+            0.42,
+            "reject",
+            "rejected",
+            "missing_current_snapshot",
+        ),
+        (
+            "future_snapshot",
+            10,
+            None,
+            {"observed_at": "2026-05-07T12:00:01Z"},
+            True,
+            True,
+            0.42,
+            "reject",
+            "rejected",
+            "missing_current_snapshot",
+        ),
+        (
+            "missing_snapshot_source_metadata",
+            10,
+            None,
+            {"source_api": ""},
+            True,
+            True,
+            0.42,
+            "reject",
+            "rejected",
+            "incomplete_source_metadata",
         ),
         (
             "missing_market_spread",
