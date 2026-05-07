@@ -540,6 +540,40 @@ Primary reason codes:
 - `capacity_too_small`
 - `approval_latency_risk`
 
+### `poly_alpha_scan_runs`
+
+Stores a deterministic scan run that groups scan results.
+
+Required fields:
+
+```text
+scan_run_id
+trigger_type
+strategy_version_id
+config_version_id
+source_set_version
+status
+started_at
+completed_at
+scanned_count
+ignored_count
+watch_count
+created_opportunity_count
+error_message
+created_at
+```
+
+Trigger types:
+
+- `scheduled_scan`
+- `manual_scan`
+
+Status values:
+
+- `running`
+- `completed`
+- `failed`
+
 ### `poly_alpha_scan_results`
 
 Stores deterministic scan outcomes, including candidates that do not become opportunities.
@@ -1118,6 +1152,7 @@ Suggested API groups:
 - `/api/poly-alpha/source-sets`
 - `/api/poly-alpha/strategy-versions`
 - `/api/poly-alpha/opportunities`
+- `/api/poly-alpha/scan-runs`
 - `/api/poly-alpha/scan-results`
 - `/api/poly-alpha/evidence-packs`
 - `/api/poly-alpha/exploration-decisions`
@@ -1153,6 +1188,7 @@ Required coverage:
 - strategy version IDs attach to research runs, signals, validations, and promotions
 - opportunity lifecycle supports ignored/watch/shadow/validated/rejected/promoted/proposed/approved/filled/skipped/expired
 - opportunity lifecycle transition table is enforced
+- scan runs group scan results and track status/summary counts
 - scan results store pre-opportunity no-trade attribution
 - exploration decisions support pass/watch/reject and update opportunity status
 - document ingestion deduplicates by payload hash
