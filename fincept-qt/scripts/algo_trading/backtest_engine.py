@@ -470,7 +470,7 @@ def run_backtest(
     BARS_PER_YEAR = {
         '1m': 252 * 390, '3m': 252 * 130, '5m': 252 * 78, '10m': 252 * 39,
         '15m': 252 * 26, '30m': 252 * 13, '1h': int(252 * 6.5), '4h': int(252 * 1.625),
-        '1d': 252, '1D': 252, 'D': 252, '1w': 52, '1W': 52, '1M': 12,
+        '1d': 252, '1D': 252, 'D': 252, '1w': 52, '1W': 52, '1M': 12, '1mth': 12,
     }
     ann_factor = BARS_PER_YEAR.get(timeframe, 252)
 
@@ -775,9 +775,9 @@ def cmd_run_backtest(params: dict, db_path: str):
             ).fetchone()
             conn.close()
             if row:
-                if not params.get('entry_conditions'):
+                if 'entry_conditions' not in params:
                     entry_conditions = json.loads(row['entry_conditions'] or '[]')
-                if not params.get('exit_conditions'):
+                if 'exit_conditions' not in params:
                     exit_conditions = json.loads(row['exit_conditions'] or '[]')
                 if 'entry_logic' not in params:
                     entry_logic = row['entry_logic'] or 'AND'

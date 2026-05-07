@@ -238,6 +238,108 @@ def test_saved_polymarket_strategy_uses_token_id_for_backtest(tmp_path, monkeypa
     assert captured["kwargs"]["provider"] == "polymarket"
 
 
+def test_backtest_respects_explicit_empty_conditions_for_saved_strategy(tmp_path, monkeypatch):
+    db = tmp_path / "fincept.db"
+    captured = {}
+    old_entry = [{"indicator": "CLOSE", "params": {}, "field": "value", "operator": ">", "value": 999}]
+    old_exit = [{"indicator": "CLOSE", "params": {}, "field": "value", "operator": "<", "value": 1}]
+    candles = pd.DataFrame(
+        {
+            "open": [10.0] * 65,
+            "high": [11.0] * 65,
+            "low": [9.0] * 65,
+            "close": [10.0] * 65,
+            "volume": [1000] * 65,
+        }
+    )
+
+    monkeypatch.setattr(backtest_engine, "fetch_historical_data", lambda *args, **kwargs: (candles, None))
+
+    def fake_run_backtest(**kwargs):
+        captured.update(kwargs)
+        return {
+            "trades": [],
+            "equity_curve": [],
+            "metrics": {
+                "total_return": 0,
+                "total_return_pct": 0,
+                "sharpe": 0,
+                "max_drawdown": 0,
+                "total_trades": 0,
+                "win_rate": 0,
+                "profit_factor": 0,
+            },
+        }
+
+    monkeypatch.setattr(backtest_engine, "run_backtest", fake_run_backtest)
+
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_save_strategy(
+            {
+                "id": "strat-clear",
+                "name": "Clear conditions",
+                "market_type": "equity",
+                "symbol": "TEST",
+                "timeframe": "1d",
+                "entry_conditions": old_entry,
+                "exit_conditions": old_exit,
+            },
+            str(db),
+        )
+    assert json.loads(out.getvalue())["success"] is True
+
+    out = StringIO()
+    with redirect_stdout(out):
+        cmd_run_backtest(
+            {
+                "strategy_id": "strat-clear",
+                "entry_conditions": [],
+                "exit_conditions": [],
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-15",
+                "initial_capital": 1000,
+            },
+            str(db),
+        )
+
+    assert json.loads(out.getvalue())["success"] is True
+    assert captured["entry_conditions"] == []
+    assert captured["exit_conditions"] == []
+
+
+def test_monthly_timeframe_uses_monthly_sharpe_annualization():
+    close_prices = [100 + (i % 5) * 2 + i * 0.4 for i in range(75)]
+    candles = pd.DataFrame(
+        {
+            "open": close_prices,
+            "high": [price + 1 for price in close_prices],
+            "low": [price - 1 for price in close_prices],
+            "close": close_prices,
+            "volume": [1000] * len(close_prices),
+        }
+    )
+    entry_condition = [{"indicator": "CLOSE", "params": {}, "field": "value", "operator": ">", "value": 0}]
+
+    legacy_monthly = backtest_engine.run_backtest(
+        candles,
+        entry_conditions=entry_condition,
+        exit_conditions=[],
+        initial_capital=1000,
+        timeframe="1M",
+    )
+    new_monthly = backtest_engine.run_backtest(
+        candles,
+        entry_conditions=entry_condition,
+        exit_conditions=[],
+        initial_capital=1000,
+        timeframe="1mth",
+    )
+
+    assert new_monthly["metrics"]["total_trades"] == 1
+    assert new_monthly["metrics"]["sharpe"] == legacy_monthly["metrics"]["sharpe"]
+
+
 def test_live_runner_load_strategy_returns_polymarket_config(tmp_path):
     db = tmp_path / "fincept.db"
     save_strategy(db, bot_config={"max_candidates": 3})
