@@ -215,6 +215,8 @@ Phase 1 validation data sources:
 - If no historical order book snapshot exists at or before the signal creation time within the configured freshness window, validation must fail with `missing_market_snapshot` instead of fetching a later book and treating it as historical.
 - External BTC/ETH/OHLCV context should come from ingested price-market documents with `observed_at` timestamps.
 
+The Phase 1 default validation freshness window is `300` seconds. This value must live in the same versioned Poly Alpha configuration object as the Promotion Gate defaults, and tests should assert it.
+
 Phase 1 exit templates:
 
 - Fixed horizon: 1h, 6h, 24h, 72h.
@@ -464,7 +466,7 @@ raw_payload_json
 created_at
 ```
 
-The validation engine may only use snapshots with `observed_at <= shadow_signal.created_at` and within the configured freshness window. Missing snapshots must produce an explicit failed validation result.
+The validation engine may only use snapshots with `observed_at <= shadow_signal.created_at` and within the default `300` second freshness window unless a versioned Poly Alpha configuration overrides that value. Missing snapshots must produce an explicit failed validation result.
 
 ### `poly_alpha_validation_results`
 
@@ -598,14 +600,23 @@ Displays:
 - validation gate status
 - promotion result
 
-Filters:
+Filters are split by type.
 
-- `watch`
+Shadow signal status filters:
+
 - `shadow`
 - `validated`
 - `rejected`
 - `promoted`
 - `expired`
+
+Promotion decision filters:
+
+- `watch`
+- `promote`
+- `reject`
+
+`watch` is not a shadow signal status. It is only a promotion decision filter.
 
 ### F4 Risk
 
