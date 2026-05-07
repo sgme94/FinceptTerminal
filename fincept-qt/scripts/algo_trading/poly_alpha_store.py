@@ -890,6 +890,8 @@ def record_scan_result(
             value=created_opportunity_id,
             label="opportunity_id",
         )
+    elif created_opportunity_id:
+        raise ValueError("created_opportunity_id is only allowed for create_opportunity")
 
     scan_result_id = scan_result_id or _new_id("scan-result")
     conn.execute(
@@ -1035,6 +1037,7 @@ def update_opportunity_status(
     if status is None:
         raise ValueError("Opportunity status or lifecycle_event is required")
     _require_opportunity_status(status)
+    after_primary_reason = row[1] if primary_reason is None else primary_reason
 
     audit_action = ""
     if write_audit:
@@ -1067,7 +1070,7 @@ def update_opportunity_status(
             strategy_version_id=row[2],
             opportunity_id=opportunity_id,
             before={"status": row[0], "primary_reason": row[1]},
-            after={"status": status, "primary_reason": primary_reason},
+            after={"status": status, "primary_reason": after_primary_reason},
             reason=primary_reason or "",
             created_at=updated_at,
         )
@@ -1363,6 +1366,16 @@ def record_shadow_signal(
         value=run_id,
         label="run_id",
     )
+    _require_column_value(
+        conn,
+        table_name="poly_alpha_research_runs",
+        id_column="run_id",
+        id_value=run_id,
+        expected_column="opportunity_id",
+        expected_value=opportunity_id,
+        label="run_id",
+        expected_label="opportunity_id",
+    )
 
     shadow_signal_id = shadow_signal_id or _new_id("shadow")
     conn.execute(
@@ -1467,6 +1480,16 @@ def record_validation_result(
         column_name="shadow_signal_id",
         value=shadow_signal_id,
         label="shadow_signal_id",
+    )
+    _require_column_value(
+        conn,
+        table_name="poly_alpha_shadow_signals",
+        id_column="shadow_signal_id",
+        id_value=shadow_signal_id,
+        expected_column="opportunity_id",
+        expected_value=opportunity_id,
+        label="shadow_signal_id",
+        expected_label="opportunity_id",
     )
 
     validation_id = validation_id or _new_id("validation")
@@ -1589,6 +1612,16 @@ def record_promotion_decision(
         column_name="shadow_signal_id",
         value=shadow_signal_id,
         label="shadow_signal_id",
+    )
+    _require_column_value(
+        conn,
+        table_name="poly_alpha_shadow_signals",
+        id_column="shadow_signal_id",
+        id_value=shadow_signal_id,
+        expected_column="opportunity_id",
+        expected_value=opportunity_id,
+        label="shadow_signal_id",
+        expected_label="opportunity_id",
     )
 
     promotion_id = promotion_id or _new_id("promotion")
@@ -2124,6 +2157,27 @@ def _require_row_exists(
     ).fetchone()
     if row is None:
         raise ValueError(f"Unknown {label}: {value}")
+
+
+def _require_column_value(
+    conn: sqlite3.Connection,
+    *,
+    table_name: str,
+    id_column: str,
+    id_value: str,
+    expected_column: str,
+    expected_value: str,
+    label: str,
+    expected_label: str,
+) -> None:
+    row = conn.execute(
+        f"SELECT {expected_column} FROM {table_name} WHERE {id_column} = ? LIMIT 1",
+        (id_value,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown {label}: {id_value}")
+    if row[0] != expected_value:
+        raise ValueError(f"{label} does not belong to {expected_label}: {id_value}")
 
 
 def _require_single_row_update(cursor: sqlite3.Cursor, label: str) -> None:

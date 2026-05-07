@@ -537,6 +537,46 @@ def test_scan_result_requires_existing_scan_run_before_insert():
     assert _row_count(conn, "poly_alpha_scan_results") == 0
 
 
+@pytest.mark.parametrize("decision", ["ignore", "watch"])
+def test_non_create_scan_result_rejects_created_opportunity_reference(decision):
+    conn = _conn()
+    scan_run_id = record_scan_run(
+        conn,
+        scan_run_id=f"scan-non-create-{decision}",
+        trigger_type="manual_scan",
+        strategy_version_id="strat-v1",
+        config_version_id="cfg-v1",
+        source_set_version="sources-v1",
+        status="running",
+        started_at=NOW,
+        created_at=NOW,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="created_opportunity_id is only allowed for create_opportunity",
+    ):
+        record_scan_result(
+            conn,
+            scan_run_id=scan_run_id,
+            strategy_version_id="strat-v1",
+            venue="polymarket",
+            venue_market_id=f"market-non-create-{decision}",
+            venue_contract_id=f"contract-non-create-{decision}",
+            outcome_id="yes",
+            decision=decision,
+            reason="wide_spread",
+            source_snapshot_ids=[],
+            source_document_ids=[],
+            created_opportunity_id="opp-x",
+            observed_at=NOW,
+            created_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_scan_results") == 0
+    assert list_scan_runs(conn)[0]["scanned_count"] == 0
+
+
 def test_evidence_chain_persists_citations_and_lifecycle_records():
     conn = _conn()
 
@@ -1148,6 +1188,30 @@ def test_shadow_signal_requires_existing_research_run_before_insert():
     assert _row_count(conn, "poly_alpha_shadow_signals") == 0
 
 
+def test_shadow_signal_requires_research_run_for_same_opportunity_before_insert():
+    conn = _conn()
+    opp_a = _record_test_opportunity(conn, opportunity_id="opp-a")
+    opp_b = _record_test_opportunity(conn, opportunity_id="opp-b")
+    run_b = _record_test_research_run(
+        conn,
+        run_id="run-b",
+        opportunity_id=opp_b,
+    )
+
+    with pytest.raises(ValueError, match="run_id does not belong to opportunity_id"):
+        _record_test_shadow_signal(
+            conn,
+            opportunity_id=opp_a,
+            run_id=run_b,
+        )
+
+    assert _row_count(conn, "poly_alpha_shadow_signals") == 0
+    assert {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)} == {
+        "opp-a": "watch",
+        "opp-b": "watch",
+    }
+
+
 @pytest.mark.parametrize(
     ("opportunity_id", "shadow_signal_id", "match"),
     [
@@ -1174,6 +1238,40 @@ def test_validation_result_requires_existing_opportunity_and_shadow_signal_befor
 
     assert _row_count(conn, "poly_alpha_validation_results") == 0
     assert list_opportunities(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
+
+def test_validation_result_requires_shadow_signal_for_same_opportunity_before_insert():
+    conn = _conn()
+    opp_a = _record_test_opportunity(conn, opportunity_id="opp-a")
+    opp_b = _record_test_opportunity(conn, opportunity_id="opp-b")
+    run_b = _record_test_research_run(
+        conn,
+        run_id="run-b",
+        opportunity_id=opp_b,
+    )
+    shadow_b = _record_test_shadow_signal(
+        conn,
+        shadow_signal_id="shadow-b",
+        opportunity_id=opp_b,
+        run_id=run_b,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="shadow_signal_id does not belong to opportunity_id",
+    ):
+        _record_test_validation_result(
+            conn,
+            opportunity_id=opp_a,
+            shadow_signal_id=shadow_b,
+        )
+
+    assert _row_count(conn, "poly_alpha_validation_results") == 0
+    assert {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)} == {
+        "opp-a": "watch",
+        "opp-b": "shadow",
+    }
     assert list_shadow_signals(conn)[0]["status"] == "shadow"
 
 
@@ -1230,6 +1328,50 @@ def test_promotion_decision_requires_existing_opportunity_and_shadow_signal_befo
     assert list_shadow_signals(conn)[0]["status"] == "shadow"
 
 
+def test_promotion_decision_requires_shadow_signal_for_same_opportunity_before_insert():
+    conn = _conn()
+    opp_a = _record_test_opportunity(conn, opportunity_id="opp-a")
+    opp_b = _record_test_opportunity(conn, opportunity_id="opp-b")
+    run_b = _record_test_research_run(
+        conn,
+        run_id="run-b",
+        opportunity_id=opp_b,
+    )
+    shadow_b = _record_test_shadow_signal(
+        conn,
+        shadow_signal_id="shadow-b",
+        opportunity_id=opp_b,
+        run_id=run_b,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="shadow_signal_id does not belong to opportunity_id",
+    ):
+        record_promotion_decision(
+            conn,
+            opportunity_id=opp_a,
+            shadow_signal_id=shadow_b,
+            strategy_version_id="strat-v1",
+            decision="promote",
+            reason="gate_passed",
+            prediction_metrics={},
+            trading_metrics={},
+            metrics={},
+            critic_blockers=[],
+            risk_checks={"paper_only": True},
+            proposal_id="",
+            decided_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_promotion_decisions") == 0
+    assert {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)} == {
+        "opp-a": "watch",
+        "opp-b": "shadow",
+    }
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
+
 def test_lifecycle_event_status_contradiction_raises_without_update_or_audit():
     conn = _conn()
     opportunity_id = _record_test_opportunity(conn, status="promoted")
@@ -1247,6 +1389,32 @@ def test_lifecycle_event_status_contradiction_raises_without_update_or_audit():
 
     assert list_opportunities(conn)[0]["status"] == "promoted"
     assert list_poly_alpha_audit_events(conn) == []
+
+
+def test_status_update_audit_after_primary_reason_matches_retained_db_value():
+    conn = _conn()
+    opportunity_id = _record_test_opportunity(conn, status="watch")
+    update_opportunity_status(
+        conn,
+        opportunity_id=opportunity_id,
+        status="rejected",
+        primary_reason="critic_blocker",
+        updated_at=NOW,
+    )
+
+    updated = update_opportunity_status(
+        conn,
+        opportunity_id=opportunity_id,
+        status="watch",
+        primary_reason=None,
+        updated_at=NOW,
+        write_audit=True,
+    )
+
+    assert updated is True
+    assert list_opportunities(conn)[0]["primary_reason"] == "critic_blocker"
+    audit = list_poly_alpha_audit_events(conn)
+    assert audit[0]["after"]["primary_reason"] == "critic_blocker"
 
 
 @pytest.mark.parametrize(
