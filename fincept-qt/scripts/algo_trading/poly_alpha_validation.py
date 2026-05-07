@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from poly_alpha_models import (
+    PRIMARY_REASON_FAILED_VALIDATION,
     PRIMARY_REASON_LATE_INFORMATION,
     PRIMARY_REASON_MISSING_MARKET_SNAPSHOT,
 )
@@ -49,6 +50,8 @@ def select_entry_snapshot(
 
 
 def run_signal_validation(conn, shadow_signal_id, config, now):
+    now_at = _parse_timestamp(now)
+    invalid_now = now_at is None
     shadow_signal = _shadow_signal(conn, shadow_signal_id)
     snapshots = [
         snapshot
@@ -89,8 +92,13 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
             documents=documents,
             snapshots=snapshots,
             exit_snapshot=template_result.get("exit_snapshot"),
+            now=now,
         )
-        failure_reason = event_metrics.get("failure_reason", "")
+        failure_reason = (
+            PRIMARY_REASON_FAILED_VALIDATION
+            if invalid_now
+            else event_metrics.get("failure_reason", "")
+        )
         validation_rows.append((validation_type, template_result, event_metrics, failure_reason))
 
     failure_reasons = [
@@ -136,10 +144,13 @@ def calculate_event_time_metrics(
     documents: list[dict[str, Any]],
     snapshots: list[dict[str, Any]],
     exit_snapshot: dict[str, Any] | None = None,
+    now: str | None = None,
 ) -> dict[str, Any]:
     signal_at = _parse_timestamp(shadow_signal.get("created_at", ""))
     if signal_at is None:
         return _empty_event_metrics()
+    now_at = _parse_timestamp(now) if now is not None else None
+    valid_now = now is None or now_at is not None
     latest_document = _latest_document_by_information_time(documents)
     if latest_document is None:
         return _empty_event_metrics()
@@ -150,7 +161,9 @@ def calculate_event_time_metrics(
         return _empty_event_metrics()
 
     at_info = _latest_snapshot_before(snapshots, info_at, strict=False)
-    after_signal = exit_snapshot or _earliest_snapshot_after(snapshots, signal_at)
+    after_signal = exit_snapshot
+    if after_signal is None and valid_now:
+        after_signal = _earliest_snapshot_after(snapshots, signal_at, latest_allowed_at=now_at)
     price_at_info = _price(at_info)
     entry_price = _price(entry_snapshot)
     price_after_signal = _price(after_signal)
@@ -412,11 +425,17 @@ def _latest_snapshot_before(
 def _earliest_snapshot_after(
     snapshots: list[dict[str, Any]],
     at: datetime,
+    *,
+    latest_allowed_at: datetime | None = None,
 ) -> dict[str, Any] | None:
     matches = []
     for snapshot in snapshots:
         observed_at = _parse_timestamp(snapshot.get("observed_at", ""))
-        if observed_at is not None and observed_at > at:
+        if (
+            observed_at is not None
+            and observed_at > at
+            and (latest_allowed_at is None or observed_at <= latest_allowed_at)
+        ):
             matches.append(snapshot)
     return min(matches, key=_snapshot_time_key) if matches else None
 

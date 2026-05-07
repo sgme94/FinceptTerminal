@@ -598,11 +598,54 @@ def test_validation_excursions_stop_at_each_exit_snapshot():
     assert rows["resolution_expiry"]["max_favorable_excursion"] == pytest.approx(0.40)
 
 
-def test_validation_invalid_now_does_not_use_future_snapshots():
+@pytest.mark.parametrize("invalid_now", ["not-a-time", ""])
+def test_validation_invalid_now_fails_closed_without_future_exit_snapshots(invalid_now):
     conn = _conn()
     shadow_signal_id = _seed_shadow_signal(conn)
     _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
     _insert_snapshot(conn, "snap-after-signal", "2026-05-07T12:05:00Z", 0.70)
+
+    result = run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config({"current_market_price": 0.44}),
+        invalid_now,
+    )
+
+    rows = list_validation_results(conn)
+    assert result["pass_fail"] == "fail"
+    assert result["failure_reason"] == "failed_validation"
+    assert {row["validation_type"] for row in rows} == {
+        "fixed_horizon",
+        "target_stop",
+        "resolution_expiry",
+    }
+    assert all(row["pass_fail"] == "fail" for row in rows)
+    assert all(row["failure_reason"] == "failed_validation" for row in rows)
+    assert all(row["exit_snapshot_id"] == "" for row in rows)
+    assert all(row["exit_price"] == pytest.approx(0.44) for row in rows)
+    assert all(row["max_adverse_excursion"] == pytest.approx(0.0) for row in rows)
+    assert all(row["max_favorable_excursion"] == pytest.approx(0.0) for row in rows)
+    assert list_opportunities(conn)[0]["status"] == "rejected"
+    assert list_opportunities(conn)[0]["primary_reason"] == "failed_validation"
+    assert list_shadow_signals(conn)[0]["status"] == "rejected"
+
+
+def test_validation_invalid_now_does_not_use_future_snapshot_for_event_metrics():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn)
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
+    _insert_snapshot(conn, "snap-future-backfill", "2026-05-07T12:05:00Z", 0.70)
+    document_id = _insert_document(
+        conn,
+        "doc-invalid-now",
+        published_at="2026-05-07T11:45:00Z",
+        fetched_at="2026-05-07T11:58:00Z",
+    )
+    conn.execute(
+        "UPDATE poly_alpha_evidence_packs SET document_ids_json = ? WHERE evidence_pack_id = ?",
+        (f'["{document_id}"]', "pack-market-1"),
+    )
 
     run_signal_validation(
         conn,
@@ -617,10 +660,7 @@ def test_validation_invalid_now_does_not_use_future_snapshots():
         "target_stop",
         "resolution_expiry",
     }
-    assert all(row["exit_snapshot_id"] == "" for row in rows)
-    assert all(row["exit_price"] == pytest.approx(0.44) for row in rows)
-    assert all(row["max_adverse_excursion"] == pytest.approx(0.0) for row in rows)
-    assert all(row["max_favorable_excursion"] == pytest.approx(0.0) for row in rows)
+    assert all(row["market_move_after_signal"] == pytest.approx(0.0) for row in rows)
 
 
 def test_validation_target_stop_ignores_non_numeric_threshold_config():
