@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getTerminalSnapshot } from "../api/client";
-import type { AuditEvent, SignalRow, TerminalStatus, TradeProposal } from "../api/types";
+import type { AuditEvent, PaperPosition, SignalRow, TerminalStatus, TradeProposal } from "../api/types";
 import { mockTerminalSnapshot } from "../data/mockTerminalData";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { EmptyStatePanel } from "../components/ui/EmptyStatePanel";
@@ -59,33 +59,35 @@ function buildRecentRows(signals: SignalRow[], auditEvents: AuditEvent[]): Recen
   ).slice(0, 6);
 }
 
-const positionColumns: Array<DenseDataTableColumn<TradeProposal>> = [
+const positionColumns: Array<DenseDataTableColumn<PaperPosition>> = [
   {
-    key: "market",
-    header: "Market",
-    render: (row) => row.marketId
-  },
-  {
-    key: "side",
-    header: "Side",
-    render: (row) => `${row.side.toUpperCase()} ${row.outcome.toUpperCase()}`
-  },
-  {
-    key: "price",
-    header: "Price",
-    align: "right",
-    render: (row) => row.price.toFixed(2)
+    key: "asset",
+    header: "Asset",
+    render: (row) => row.assetId
   },
   {
     key: "size",
     header: "Size",
     align: "right",
-    render: (row) => formatUsd(row.sizeUsd)
+    render: (row) => row.size.toFixed(2)
   },
   {
-    key: "status",
-    header: "Status",
-    render: (row) => <StatusPill label={row.status} tone={row.source === "mock" ? "mock" : "warn"} />
+    key: "avg",
+    header: "Avg",
+    align: "right",
+    render: (row) => row.avgPrice.toFixed(2)
+  },
+  {
+    key: "exposure",
+    header: "Exposure",
+    align: "right",
+    render: (row) => formatUsd(row.exposureUsd)
+  },
+  {
+    key: "pnl",
+    header: "Realized PnL",
+    align: "right",
+    render: (row) => formatUsd(row.realizedPnl)
   }
 ];
 
@@ -165,6 +167,7 @@ export function OverviewPage() {
   );
   const liveEnabled = snapshot.status.liveEnabled === true;
   const modeLabel = snapshot.status.mode === "paper" ? "Paper mode" : "Advisory mode";
+  const realizedPnl = snapshot.positions.reduce((total, position) => total + position.realizedPnl, 0);
 
   return (
     <section className="workspace-panel page-stack" aria-busy={isLoading}>
@@ -184,8 +187,8 @@ export function OverviewPage() {
       <div className="metric-grid" aria-label="PnL and exposure metrics">
         <div className="metric-cell">
           <span>PnL</span>
-          <strong>{formatUsd(0)}</strong>
-          <small>Fallback: no realized PnL endpoint</small>
+          <strong>{formatUsd(realizedPnl)}</strong>
+          <small>Paper positions realized PnL</small>
         </div>
         <div className="metric-cell">
           <span>Exposure</span>
@@ -205,10 +208,10 @@ export function OverviewPage() {
           <DenseDataTable
             caption="Open positions"
             columns={positionColumns}
-            rows={[]}
+            rows={snapshot.positions}
             getRowKey={(row) => row.id}
             emptyTitle="No open positions"
-            emptyDescription="No positions endpoint is available in the paper-only MVP."
+            emptyDescription="No paper positions are open."
           />
         </div>
         <div className="page-section">

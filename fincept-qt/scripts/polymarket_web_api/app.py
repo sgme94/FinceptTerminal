@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from .control import accept_control_action, decide_proposal
 from .repository import PolymarketRepository
@@ -12,6 +13,8 @@ from .schemas import (
     CandidateList,
     ControlActionRequest,
     ControlActionResponse,
+    PaperPositionList,
+    PaperTradeList,
     ProposalList,
     SignalList,
     SkipList,
@@ -22,6 +25,12 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
     db_path = db_path or os.environ.get("POLYMARKET_WEB_DB", ".polymarket-web.sqlite")
     repo = PolymarketRepository(db_path)
     app = FastAPI(title="Polymarket Web Terminal API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:4177", "http://localhost:4177"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
 
     @app.get("/api/bot/status", response_model=BotStatus)
     def get_bot_status() -> BotStatus:
@@ -46,6 +55,14 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
     @app.get("/api/skips", response_model=SkipList)
     def get_skips(deployment_id: str = "default") -> SkipList:
         return SkipList(skips=repo.list_skips(deployment_id))
+
+    @app.get("/api/trades", response_model=PaperTradeList)
+    def get_trades(deployment_id: str = "default") -> PaperTradeList:
+        return PaperTradeList(trades=repo.list_trades(deployment_id))
+
+    @app.get("/api/positions", response_model=PaperPositionList)
+    def get_positions(deployment_id: str = "default") -> PaperPositionList:
+        return PaperPositionList(positions=repo.list_positions(deployment_id))
 
     @app.post("/api/control/start", response_model=ControlActionResponse, status_code=status.HTTP_202_ACCEPTED)
     def start_bot(request: ControlActionRequest) -> ControlActionResponse:

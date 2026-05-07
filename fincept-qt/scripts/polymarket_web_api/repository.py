@@ -5,6 +5,7 @@ import sqlite3
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ if str(ALGO_ROOT) not in sys.path:
 from polymarket_store import (  # noqa: E402
     ensure_polymarket_schema,
     list_audit_events,
+    list_paper_positions,
+    list_paper_trades,
     list_trade_proposals,
     record_audit_event,
     update_trade_proposal_status,
@@ -29,12 +32,34 @@ class InvalidProposalStateError(Exception):
     pass
 
 
+class ProposalExpiredError(Exception):
+    pass
+
+
 def parse_features_json(value: str | None) -> dict[str, Any]:
     try:
         parsed = json.loads(value or "{}")
     except (TypeError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def is_past_timestamp(value: str | None, now: str) -> bool:
+    if not value:
+        return False
+    expires_at = _parse_utc(value)
+    now_dt = _parse_utc(now)
+    return expires_at is not None and now_dt is not None and expires_at <= now_dt
+
+
+def _parse_utc(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 class PolymarketRepository:
@@ -137,6 +162,14 @@ class PolymarketRepository:
                 for row in rows
             ]
 
+    def list_trades(self, deployment_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return list_paper_trades(conn, deployment_id)
+
+    def list_positions(self, deployment_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return list_paper_positions(conn, deployment_id)
+
     def record_audit(
         self,
         *,
@@ -225,6 +258,35 @@ class PolymarketRepository:
                 )
                 conn.commit()
                 raise InvalidProposalStateError(proposal_id)
+            if is_past_timestamp(before.get("expires_at"), now):
+                after = dict(before)
+                after["status"] = "expired"
+                update_trade_proposal_status(
+                    conn,
+                    proposal_id,
+                    "expired",
+                    before.get("decided_by", ""),
+                    before.get("decided_at", ""),
+                    before.get("decision_reason", ""),
+                )
+                record_audit_event(
+                    conn,
+                    deployment_id=deployment_id,
+                    strategy_id=strategy_id,
+                    actor_type="user",
+                    actor_id=actor_id,
+                    action=action,
+                    entity_type="proposal",
+                    entity_id=proposal_id,
+                    before=before,
+                    after=after,
+                    result="failed",
+                    reason="proposal_expired",
+                    request_id=request_id,
+                    now=now,
+                )
+                conn.commit()
+                raise ProposalExpiredError(proposal_id)
             update_trade_proposal_status(conn, proposal_id, status, actor_id, now, reason)
             after = dict(before)
             after.update(
@@ -251,3 +313,64 @@ class PolymarketRepository:
                 request_id=request_id,
                 now=now,
             )
+
+    def kill_switch(
+        self,
+        *,
+        deployment_id: str,
+        strategy_id: str,
+        actor_id: str,
+        reason: str,
+        request_id: str,
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            event_id = record_audit_event(
+                conn,
+                deployment_id=deployment_id,
+                strategy_id=strategy_id,
+                actor_type="user",
+                actor_id=actor_id,
+                action="kill_switch",
+                entity_type="deployment",
+                entity_id=deployment_id,
+                before={},
+                after={"status": "kill_switch"},
+                result="accepted",
+                reason=reason,
+                request_id=request_id,
+                now=now,
+            )
+            open_proposals = [
+                proposal
+                for proposal in list_trade_proposals(conn, deployment_id)
+                if proposal["status"] in {"proposed", "approved"}
+            ]
+            for proposal in open_proposals:
+                after = dict(proposal)
+                after["status"] = "cancelled"
+                update_trade_proposal_status(
+                    conn,
+                    proposal["proposal_id"],
+                    "cancelled",
+                    actor_id,
+                    now,
+                    reason or "kill_switch",
+                )
+                record_audit_event(
+                    conn,
+                    deployment_id=deployment_id,
+                    strategy_id=proposal.get("strategy_id") or strategy_id,
+                    actor_type="user",
+                    actor_id=actor_id,
+                    action="proposal_cancelled",
+                    entity_type="proposal",
+                    entity_id=proposal["proposal_id"],
+                    before=proposal,
+                    after=after,
+                    result="success",
+                    reason=reason or "kill_switch",
+                    request_id=request_id,
+                    now=now,
+                )
+            return event_id

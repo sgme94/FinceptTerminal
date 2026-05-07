@@ -3,6 +3,8 @@ import type {
   BotStatus,
   MarketCandidate,
   OrderBookSnapshot,
+  PaperPosition,
+  PaperTrade,
   ProbabilityPoint,
   RiskLimit,
   SignalRow,
@@ -121,6 +123,37 @@ export const mockTradeProposals: TradeProposal[] = [
       createdAt: `2026-05-06T10:2${index}:00.000Z`
     })
   )
+];
+
+export const mockPaperTrades: PaperTrade[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "trade-mock-1",
+    deploymentId: "mock-deploy-001",
+    assetId: "yes-token-1",
+    side: "BUY",
+    size: 10,
+    price: 0.58,
+    realizedPnl: 0,
+    reason: "Mock paper fill.",
+    createdAt: "2026-05-06T10:25:00.000Z"
+  }
+];
+
+export const mockPaperPositions: PaperPosition[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "position-yes-token-1",
+    deploymentId: "mock-deploy-001",
+    assetId: "yes-token-1",
+    size: 10,
+    avgPrice: 0.58,
+    exposureUsd: 5.8,
+    realizedPnl: 0,
+    updatedAt: "2026-05-06T10:25:00.000Z"
+  }
 ];
 
 export const mockAuditEvents: AuditEvent[] = [
@@ -274,6 +307,8 @@ export const mockTerminalSnapshot: TerminalStatus = {
   markets: mockMarketCandidates,
   signals: mockSignals,
   proposals: mockTradeProposals,
+  trades: mockPaperTrades,
+  positions: mockPaperPositions,
   auditEvents: mockAuditEvents,
   riskLimits: mockRiskLimits,
   probabilityHistory: mockProbabilityHistory,

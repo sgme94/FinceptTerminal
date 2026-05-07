@@ -78,6 +78,33 @@ const snapshot: TerminalStatus = {
       createdAt: "2026-05-06T10:25:00.000Z"
     }
   ],
+  trades: [
+    {
+      source: "api",
+      id: "trade-1",
+      deploymentId: "dep-test",
+      assetId: "asset-1",
+      side: "BUY",
+      size: 10,
+      price: 0.57,
+      realizedPnl: 0,
+      reason: "manual approval fill",
+      createdAt: "2026-05-06T10:27:00.000Z"
+    }
+  ],
+  positions: [
+    {
+      source: "api",
+      id: "position-asset-1",
+      deploymentId: "dep-test",
+      assetId: "asset-1",
+      size: 10,
+      avgPrice: 0.57,
+      exposureUsd: 5.7,
+      realizedPnl: 0,
+      updatedAt: "2026-05-06T10:27:00.000Z"
+    }
+  ],
   auditEvents: [
     {
       source: "api",
@@ -124,10 +151,12 @@ describe("OverviewPage", () => {
     expect(screen.getByText(/paper mode/i)).toBeInTheDocument();
     expect(screen.getByText(/live disabled/i)).toBeInTheDocument();
     expect(screen.getAllByText(/PnL/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$0.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/exposure/i).length).toBeGreaterThan(0);
     expect(screen.getByText("$420.00")).toBeInTheDocument();
     expect(screen.getAllByText(/open positions/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("asset-1")).toBeInTheDocument();
+    expect(screen.getByText("$5.70")).toBeInTheDocument();
     expect(screen.getAllByText(/pending proposals/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/proposed/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/recent signals\/fills\/skips/i).length).toBeGreaterThan(0);
@@ -138,14 +167,14 @@ describe("OverviewPage", () => {
     expect(screen.getAllByText(/agent composer placeholder/i).length).toBeGreaterThan(0);
   });
 
-  it("does not display paper proposals as open positions when no positions endpoint is available", async () => {
+  it("renders open positions from the positions endpoint instead of proposal rows", async () => {
     render(<OverviewPage />);
 
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
 
-    const openPositionsSection = screen.getByText("Open positions").closest(".page-section");
+    const openPositionsSection = screen.getByRole("heading", { name: "Open positions" }).closest(".page-section");
     expect(openPositionsSection).not.toBeNull();
-    expect(within(openPositionsSection as HTMLElement).getByText(/No open positions/i)).toBeInTheDocument();
+    expect(within(openPositionsSection as HTMLElement).getByText("asset-1")).toBeInTheDocument();
     expect(within(openPositionsSection as HTMLElement).queryByText("mkt-1")).not.toBeInTheDocument();
   });
 });

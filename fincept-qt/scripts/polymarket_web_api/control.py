@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status as http_status
 
-from .repository import InvalidProposalStateError, PolymarketRepository, ProposalNotFoundError
+from .repository import InvalidProposalStateError, PolymarketRepository, ProposalExpiredError, ProposalNotFoundError
 from .schemas import ControlActionRequest, ControlActionResponse
 
 
@@ -21,20 +21,31 @@ def accept_control_action(
     action: str,
     request: ControlActionRequest,
 ) -> ControlActionResponse:
-    event_id = repo.record_audit(
-        deployment_id=request.deployment_id,
-        strategy_id=request.strategy_id,
-        actor_id=request.actor_id,
-        action=action,
-        entity_type="deployment",
-        entity_id=request.deployment_id,
-        before={},
-        after={"status": action},
-        result="accepted",
-        reason=request.reason,
-        request_id=request.request_id,
-        now=utc_now(),
-    )
+    now = utc_now()
+    if action == "kill_switch":
+        event_id = repo.kill_switch(
+            deployment_id=request.deployment_id,
+            strategy_id=request.strategy_id,
+            actor_id=request.actor_id,
+            reason=request.reason,
+            request_id=request.request_id,
+            now=now,
+        )
+    else:
+        event_id = repo.record_audit(
+            deployment_id=request.deployment_id,
+            strategy_id=request.strategy_id,
+            actor_id=request.actor_id,
+            action=action,
+            entity_type="deployment",
+            entity_id=request.deployment_id,
+            before={},
+            after={"status": action},
+            result="accepted",
+            reason=request.reason,
+            request_id=request.request_id,
+            now=now,
+        )
     return ControlActionResponse(
         accepted=True,
         action=action,
@@ -63,6 +74,8 @@ def decide_proposal(
         )
     except ProposalNotFoundError as exc:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="proposal_not_found") from exc
+    except ProposalExpiredError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="proposal_expired") from exc
     except InvalidProposalStateError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="proposal_not_proposed") from exc
     return ControlActionResponse(

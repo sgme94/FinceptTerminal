@@ -187,6 +187,7 @@ def update_trade_proposal_status(
     decided_by: str,
     decided_at: str,
     decision_reason: str,
+    fill_trade_id: str | None = None,
 ) -> None:
     conn.execute(
         """
@@ -194,10 +195,11 @@ def update_trade_proposal_status(
         SET status = ?,
             decided_by = ?,
             decided_at = ?,
-            decision_reason = ?
+            decision_reason = ?,
+            fill_trade_id = CASE WHEN ? IS NULL THEN fill_trade_id ELSE ? END
         WHERE proposal_id = ?
         """,
-        (status, decided_by, decided_at, decision_reason, proposal_id),
+        (status, decided_by, decided_at, decision_reason, fill_trade_id, fill_trade_id, proposal_id),
     )
 
 
@@ -238,6 +240,70 @@ def list_trade_proposals(conn: sqlite3.Connection, deployment_id: str) -> list[d
             "decided_by": row[19],
             "decided_at": row[20],
             "decision_reason": row[21],
+        }
+        for row in rows
+    ]
+
+
+def has_open_trade_proposal(conn: sqlite3.Connection, deployment_id: str, asset_id: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM algo_polymarket_trade_proposals
+        WHERE deployment_id = ?
+          AND asset_id = ?
+          AND status IN ('proposed', 'approved')
+        LIMIT 1
+        """,
+        (deployment_id, asset_id),
+    ).fetchone()
+    return row is not None
+
+
+def list_paper_trades(conn: sqlite3.Connection, deployment_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, deployment_id, asset_id, side, size, price, realized_pnl, reason, created_at
+        FROM algo_polymarket_paper_trades
+        WHERE deployment_id = ?
+        ORDER BY created_at, id
+        """,
+        (deployment_id,),
+    ).fetchall()
+    return [
+        {
+            "id": row[0],
+            "deployment_id": row[1],
+            "asset_id": row[2],
+            "side": row[3],
+            "size": row[4],
+            "price": row[5],
+            "realized_pnl": row[6],
+            "reason": row[7],
+            "created_at": row[8],
+        }
+        for row in rows
+    ]
+
+
+def list_paper_positions(conn: sqlite3.Connection, deployment_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT deployment_id, asset_id, size, avg_price, realized_pnl, updated_at
+        FROM algo_polymarket_paper_positions
+        WHERE deployment_id = ?
+        ORDER BY updated_at, asset_id
+        """,
+        (deployment_id,),
+    ).fetchall()
+    return [
+        {
+            "deployment_id": row[0],
+            "asset_id": row[1],
+            "size": row[2],
+            "avg_price": row[3],
+            "realized_pnl": row[4],
+            "updated_at": row[5],
         }
         for row in rows
     ]
@@ -296,7 +362,7 @@ def list_audit_events(conn: sqlite3.Connection, deployment_id: str) -> list[dict
                request_id, created_at
         FROM algo_polymarket_audit_events
         WHERE deployment_id = ?
-        ORDER BY created_at, event_id
+        ORDER BY id
         """,
         (deployment_id,),
     ).fetchall()
@@ -391,8 +457,8 @@ def record_signal(conn: sqlite3.Connection, deployment_id: str, signal: SignalDe
     )
 
 
-def record_trade(conn: sqlite3.Connection, deployment_id: str, fill: PaperFill, now: str) -> None:
-    conn.execute(
+def record_trade(conn: sqlite3.Connection, deployment_id: str, fill: PaperFill, now: str) -> str:
+    cursor = conn.execute(
         """
         INSERT INTO algo_polymarket_paper_trades
             (deployment_id, asset_id, side, size, price, realized_pnl, reason, created_at)
@@ -400,6 +466,7 @@ def record_trade(conn: sqlite3.Connection, deployment_id: str, fill: PaperFill, 
         """,
         (deployment_id, fill.asset_id, fill.side, fill.size, fill.price, fill.realized_pnl, fill.reason, now),
     )
+    return str(cursor.lastrowid)
 
 
 def load_positions(conn: sqlite3.Connection, deployment_id: str) -> dict[str, PaperPosition]:

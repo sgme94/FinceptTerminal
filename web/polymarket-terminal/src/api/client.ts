@@ -4,13 +4,26 @@ import {
   mockAuditEvents,
   mockBotStatus,
   mockMarketCandidates,
+  mockPaperPositions,
+  mockPaperTrades,
   mockRiskLimits,
   mockSignals,
   mockSkips,
   mockTerminalSnapshot,
   mockTradeProposals
 } from "../data/mockTerminalData";
-import type { AuditEvent, BotStatus, MarketCandidate, RiskLimit, SignalRow, SkipRow, TerminalStatus, TradeProposal } from "./types";
+import type {
+  AuditEvent,
+  BotStatus,
+  MarketCandidate,
+  PaperPosition,
+  PaperTrade,
+  RiskLimit,
+  SignalRow,
+  SkipRow,
+  TerminalStatus,
+  TradeProposal
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_POLYMARKET_API_BASE ?? "http://localhost:8765";
 
@@ -104,6 +117,35 @@ type SkipResponse = {
 
 type SkipListResponse = {
   skips: SkipResponse[];
+};
+
+type PaperTradeResponse = {
+  id?: number;
+  deployment_id?: string;
+  asset_id?: string;
+  side?: string;
+  size?: number;
+  price?: number;
+  realized_pnl?: number;
+  reason?: string;
+  created_at?: string;
+};
+
+type PaperTradeListResponse = {
+  trades: PaperTradeResponse[];
+};
+
+type PaperPositionResponse = {
+  deployment_id?: string;
+  asset_id?: string;
+  size?: number;
+  avg_price?: number;
+  realized_pnl?: number;
+  updated_at?: string;
+};
+
+type PaperPositionListResponse = {
+  positions: PaperPositionResponse[];
 };
 
 export type ControlActionPayload = {
@@ -328,6 +370,39 @@ function mapSkip(skip: SkipResponse): SkipRow {
   };
 }
 
+function mapPaperTrade(trade: PaperTradeResponse): PaperTrade {
+  return {
+    id: `trade-${trade.id ?? trade.asset_id ?? ""}`,
+    deploymentId: trade.deployment_id ?? "",
+    assetId: trade.asset_id ?? "",
+    side: trade.side ?? "",
+    size: trade.size ?? 0,
+    price: trade.price ?? 0,
+    realizedPnl: trade.realized_pnl ?? 0,
+    reason: trade.reason ?? "",
+    createdAt: trade.created_at ?? "",
+    source: "api"
+  };
+}
+
+function mapPaperPosition(position: PaperPositionResponse): PaperPosition {
+  const size = position.size ?? 0;
+  const avgPrice = position.avg_price ?? 0;
+  const assetId = position.asset_id ?? "";
+
+  return {
+    id: `position-${assetId}`,
+    deploymentId: position.deployment_id ?? "",
+    assetId,
+    size,
+    avgPrice,
+    exposureUsd: size * avgPrice,
+    realizedPnl: position.realized_pnl ?? 0,
+    updatedAt: position.updated_at ?? "",
+    source: "api"
+  };
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   try {
     return mapBotStatus(await fetchJson<BotStatusResponse>("/api/bot/status"));
@@ -395,6 +470,32 @@ export async function getSkips(deploymentId?: string): Promise<SkipRow[]> {
   }
 }
 
+export async function getPaperTrades(deploymentId?: string): Promise<PaperTrade[]> {
+  const query = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : "";
+
+  try {
+    const body = await fetchJson<PaperTradeListResponse>(`/api/trades${query}`);
+    return body.trades.map(mapPaperTrade);
+  } catch {
+    return deploymentId
+      ? mockPaperTrades.filter((trade) => trade.deploymentId === deploymentId)
+      : mockPaperTrades;
+  }
+}
+
+export async function getPaperPositions(deploymentId?: string): Promise<PaperPosition[]> {
+  const query = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : "";
+
+  try {
+    const body = await fetchJson<PaperPositionListResponse>(`/api/positions${query}`);
+    return body.positions.map(mapPaperPosition);
+  } catch {
+    return deploymentId
+      ? mockPaperPositions.filter((position) => position.deploymentId === deploymentId)
+      : mockPaperPositions;
+  }
+}
+
 export async function getRiskLimits(): Promise<RiskLimit[]> {
   return mockRiskLimits;
 }
@@ -418,9 +519,11 @@ export async function triggerKillSwitch(payload: ControlActionPayload): Promise<
 }
 
 export async function getTerminalSnapshot(deploymentId = "default"): Promise<TerminalStatus> {
-  const [status, proposals, auditEvents, markets, signals, riskLimits] = await Promise.all([
+  const [status, proposals, trades, positions, auditEvents, markets, signals, riskLimits] = await Promise.all([
     getBotStatus(),
     getTradeProposals(deploymentId),
+    getPaperTrades(deploymentId),
+    getPaperPositions(deploymentId),
     getAuditEvents(deploymentId),
     getCandidates(deploymentId),
     getSignals(deploymentId),
@@ -433,6 +536,8 @@ export async function getTerminalSnapshot(deploymentId = "default"): Promise<Ter
     markets,
     signals,
     proposals,
+    trades,
+    positions,
     auditEvents,
     riskLimits
   };

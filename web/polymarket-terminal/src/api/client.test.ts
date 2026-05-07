@@ -4,6 +4,8 @@ import {
   getAuditEvents,
   getBotStatus,
   getCandidates,
+  getPaperPositions,
+  getPaperTrades,
   getSignals,
   getSkips,
   getTerminalSnapshot,
@@ -275,6 +277,75 @@ describe("terminal api client", () => {
         id: "skip-3",
         marketId: "market-thin",
         reason: "liquidity_below_threshold",
+        source: "api"
+      })
+    ]);
+  });
+
+  it("fetches paper trades and positions for a deployment from read-only endpoints", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "http://localhost:8765/api/trades?deployment_id=dep-1") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              trades: [
+                {
+                  id: 9,
+                  deployment_id: "dep-1",
+                  asset_id: "asset-1",
+                  side: "BUY",
+                  size: 10,
+                  price: 0.42,
+                  realized_pnl: 0,
+                  reason: "manual approval fill",
+                  created_at: "2026-05-06T01:00:00.000Z"
+                }
+              ]
+            })
+        });
+      }
+
+      if (url === "http://localhost:8765/api/positions?deployment_id=dep-1") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              positions: [
+                {
+                  deployment_id: "dep-1",
+                  asset_id: "asset-1",
+                  size: 10,
+                  avg_price: 0.42,
+                  realized_pnl: 0,
+                  updated_at: "2026-05-06T01:00:00.000Z"
+                }
+              ]
+            })
+        });
+      }
+
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getPaperTrades("dep-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "trade-9",
+        assetId: "asset-1",
+        side: "BUY",
+        size: 10,
+        price: 0.42,
+        source: "api"
+      })
+    ]);
+    await expect(getPaperPositions("dep-1")).resolves.toEqual([
+      expect.objectContaining({
+        id: "position-asset-1",
+        assetId: "asset-1",
+        size: 10,
+        avgPrice: 0.42,
+        exposureUsd: 4.2,
         source: "api"
       })
     ]);

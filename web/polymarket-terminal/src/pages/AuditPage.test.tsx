@@ -1,12 +1,14 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditEvent, TradeProposal } from "../api/types";
-import { getAuditEvents, getTradeProposals } from "../api/client";
+import type { AuditEvent, PaperTrade, SignalRow, TradeProposal } from "../api/types";
+import { getAuditEvents, getPaperTrades, getSignals, getTradeProposals } from "../api/client";
 import { AuditPage } from "./AuditPage";
 
 vi.mock("../api/client", () => ({
   getAuditEvents: vi.fn(),
+  getPaperTrades: vi.fn(),
+  getSignals: vi.fn(),
   getTradeProposals: vi.fn()
 }));
 
@@ -90,9 +92,39 @@ const proposals: TradeProposal[] = [
   }
 ];
 
+const trades: PaperTrade[] = [
+  {
+    source: "api",
+    id: "trade-1",
+    deploymentId: "dep-test",
+    assetId: "asset-1",
+    side: "BUY",
+    size: 10,
+    price: 0.58,
+    realizedPnl: 0,
+    reason: "manual approval fill",
+    createdAt: "2026-05-06T10:20:00.000Z"
+  }
+];
+
+const signals: SignalRow[] = [
+  {
+    source: "api",
+    id: "signal-1",
+    marketId: "asset-1",
+    label: "Approved signal",
+    direction: "yes",
+    confidence: 72,
+    edgeBps: 120,
+    updatedAt: "2026-05-06T10:07:00.000Z"
+  }
+];
+
 describe("AuditPage", () => {
   beforeEach(() => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents);
+    vi.mocked(getPaperTrades).mockResolvedValue(trades);
+    vi.mocked(getSignals).mockResolvedValue(signals);
     vi.mocked(getTradeProposals).mockResolvedValue(proposals);
   });
 
@@ -132,5 +164,20 @@ describe("AuditPage", () => {
     expect(screen.getByText("mkt-1")).toBeInTheDocument();
     expect(screen.queryByText("prop-other")).not.toBeInTheDocument();
     expect(screen.queryByText("mkt-other")).not.toBeInTheDocument();
+  });
+
+  it("renders trades and signals tabs from backend rows", async () => {
+    const user = userEvent.setup();
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    expect(screen.getByText("trade-1")).toBeInTheDocument();
+    expect(screen.getByText("asset-1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /signals/i }));
+
+    expect(screen.getByText("signal-1")).toBeInTheDocument();
+    expect(screen.getByText("Approved signal")).toBeInTheDocument();
   });
 });

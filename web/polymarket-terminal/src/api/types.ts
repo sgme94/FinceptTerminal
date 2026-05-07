@@ -62,6 +62,29 @@ export type TradeProposal = DataQuality & {
   assetId?: string;
 };
 
+export type PaperTrade = DataQuality & {
+  id: string;
+  deploymentId: string;
+  assetId: string;
+  side: string;
+  size: number;
+  price: number;
+  realizedPnl: number;
+  reason: string;
+  createdAt: string;
+};
+
+export type PaperPosition = DataQuality & {
+  id: string;
+  deploymentId: string;
+  assetId: string;
+  size: number;
+  avgPrice: number;
+  exposureUsd: number;
+  realizedPnl: number;
+  updatedAt: string;
+};
+
 export type AuditEvent = DataQuality & {
   id: string;
   deploymentId: string;
@@ -120,6 +143,8 @@ export type TerminalStatus = {
   markets: MarketCandidate[];
   signals: SignalRow[];
   proposals: TradeProposal[];
+  trades: PaperTrade[];
+  positions: PaperPosition[];
   auditEvents: AuditEvent[];
   riskLimits: RiskLimit[];
   probabilityHistory: ProbabilityPoint[];

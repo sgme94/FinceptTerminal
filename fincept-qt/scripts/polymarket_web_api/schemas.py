@@ -110,6 +110,35 @@ class SkipList(BaseModel):
     skips: list[Skip]
 
 
+class PaperTrade(BaseModel):
+    id: int
+    deployment_id: str
+    asset_id: str | None = None
+    side: str | None = None
+    size: float | None = None
+    price: float | None = None
+    realized_pnl: float | None = None
+    reason: str = ""
+    created_at: str
+
+
+class PaperTradeList(BaseModel):
+    trades: list[PaperTrade]
+
+
+class PaperPosition(BaseModel):
+    deployment_id: str
+    asset_id: str
+    size: float
+    avg_price: float
+    realized_pnl: float | None = None
+    updated_at: str
+
+
+class PaperPositionList(BaseModel):
+    positions: list[PaperPosition]
+
+
 class ControlActionRequest(BaseModel):
     deployment_id: str = "default"
     strategy_id: str = "manual"

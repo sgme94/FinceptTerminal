@@ -18,6 +18,8 @@ from polymarket_sources import PolymarketRestSource, load_fixture
 from polymarket_store import (
     delete_position,
     ensure_polymarket_schema,
+    has_open_trade_proposal,
+    list_trade_proposals,
     load_positions,
     record_candidate,
     record_audit_event,
@@ -26,6 +28,7 @@ from polymarket_store import (
     record_skip,
     record_trade,
     record_trade_proposal,
+    update_trade_proposal_status,
     upsert_position,
 )
 
@@ -77,6 +80,16 @@ def run_polymarket_cycle(
 
         positions = load_positions(conn, deployment_id)
         exited_assets = _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, result)
+        _process_approved_proposals(
+            conn,
+            deployment_id,
+            positions,
+            books,
+            source if should_fetch_books else None,
+            cfg,
+            now,
+            result,
+        )
         _process_entries(conn, deployment_id, strategy_id, positions, exited_assets, candidates, books, overrides, cfg, now, result)
 
         conn.commit()
@@ -144,6 +157,17 @@ def _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, r
 def _process_entries(conn, deployment_id, strategy_id, positions, exited_assets, candidates, books, overrides, cfg, now, result) -> None:
     for candidate in candidates:
         if candidate.asset_id in positions:
+            continue
+        if has_open_trade_proposal(conn, deployment_id, candidate.asset_id):
+            record_skip(
+                conn,
+                deployment_id,
+                "open_proposal_exists",
+                now,
+                market_id=candidate.market_id,
+                asset_id=candidate.asset_id,
+            )
+            result["skips"] += 1
             continue
         if candidate.asset_id in exited_assets:
             record_skip(conn, deployment_id, "exited_this_cycle", now, market_id=candidate.market_id, asset_id=candidate.asset_id)
@@ -237,6 +261,162 @@ def _process_entries(conn, deployment_id, strategy_id, positions, exited_assets,
         result["fills"] += 1
 
 
+def _process_approved_proposals(conn, deployment_id, positions, books, source, cfg, now, result) -> None:
+    approved = [
+        proposal
+        for proposal in list_trade_proposals(conn, deployment_id)
+        if proposal["status"] == "approved"
+    ]
+    for proposal in approved:
+        if _is_expired(proposal.get("expires_at"), now):
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "expired",
+                now,
+                action="proposal_expired",
+                result="failed",
+                reason="proposal_expired",
+            )
+            continue
+
+        asset_id = proposal.get("asset_id") or ""
+        book_payload = books.get(asset_id)
+        if not book_payload and source is not None:
+            book_payload = source.fetch_clob_order_book(asset_id)
+            books[asset_id] = book_payload
+        if not book_payload:
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "failed",
+                now,
+                action="error",
+                result="failed",
+                reason="missing_orderbook",
+            )
+            continue
+        if _is_stale(book_payload, now, int(cfg.get("freshness_ttl_sec", 30))):
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "failed",
+                now,
+                action="error",
+                result="failed",
+                reason="stale_orderbook",
+            )
+            continue
+
+        book = _book_from_payload(book_payload)
+        signal = SignalDecision(
+            asset_id=asset_id,
+            action=proposal.get("side") or "buy",
+            entry_price=book.best_ask,
+            estimated_probability=proposal.get("estimated_probability"),
+            edge=float(proposal.get("edge") or 0.0),
+            confidence=float(proposal.get("confidence") or 0.0),
+            reason=proposal.get("reason") or "manual approval",
+            features=proposal.get("features") or {},
+        )
+        signal.size = float(proposal.get("size") or 0.0)
+        risk = check_entry_risk(
+            signal=signal,
+            portfolio=_portfolio_from_positions(positions),
+            config=_risk_config(cfg),
+            now=now,
+        )
+        if not risk.ok:
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "failed",
+                now,
+                action="error",
+                result="failed",
+                reason=risk.reason,
+            )
+            continue
+
+        fill = simulate_entry_fill(signal, book)
+        if not fill.ok:
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "failed",
+                now,
+                action="error",
+                result="failed",
+                reason=fill.reason,
+            )
+            continue
+        position = apply_fill_to_position(positions.get(asset_id), fill)
+        if position is not None:
+            positions[asset_id] = position
+            upsert_position(conn, deployment_id, position, now)
+        trade_id = record_trade(conn, deployment_id, fill, now)
+        _transition_proposal(
+            conn,
+            deployment_id,
+            proposal,
+            "filled",
+            now,
+            action="fill_simulated",
+            result="success",
+            reason=proposal.get("decision_reason") or "manual approval",
+            fill_trade_id=trade_id,
+        )
+        result["fills"] += 1
+
+
+def _transition_proposal(
+    conn,
+    deployment_id,
+    proposal,
+    status,
+    now,
+    *,
+    action,
+    result,
+    reason,
+    fill_trade_id: str | None = None,
+) -> None:
+    after = dict(proposal)
+    after["status"] = status
+    if fill_trade_id:
+        after["fill_trade_id"] = fill_trade_id
+    update_trade_proposal_status(
+        conn,
+        proposal["proposal_id"],
+        status,
+        proposal.get("decided_by") or "polymarket_runner",
+        proposal.get("decided_at") or now,
+        proposal.get("decision_reason") or reason,
+        fill_trade_id=fill_trade_id,
+    )
+    record_audit_event(
+        conn,
+        deployment_id,
+        proposal.get("strategy_id") or "",
+        "runner",
+        "polymarket_runner",
+        action,
+        "proposal",
+        proposal["proposal_id"],
+        proposal,
+        after,
+        result,
+        reason,
+        "",
+        now,
+    )
+
+
 def _signal_for_candidate(candidate, book, overrides, cfg) -> SignalDecision:
     override = overrides.get(candidate.asset_id)
     if override and override.get("action") != "exit":
@@ -282,6 +462,14 @@ def _is_stale(payload: dict, now: str, ttl_sec: int) -> bool:
     if fetched_dt is None or now_dt is None:
         return True
     return (now_dt - fetched_dt).total_seconds() > ttl_sec
+
+
+def _is_expired(expires_at: str | None, now: str) -> bool:
+    if not expires_at:
+        return False
+    expires_dt = _parse_utc(expires_at)
+    now_dt = _parse_utc(now)
+    return expires_dt is not None and now_dt is not None and expires_dt <= now_dt
 
 
 def _proposal_expires_at(now: str, ttl_sec: int) -> str:

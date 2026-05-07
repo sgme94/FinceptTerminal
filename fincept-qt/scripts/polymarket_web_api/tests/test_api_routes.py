@@ -14,7 +14,13 @@ from polymarket_web_api.app import create_app
 from polymarket_store import ensure_polymarket_schema, record_audit_event
 
 
-def insert_proposal(conn, proposal_id="proposal-1", deployment_id="dep-1", status="proposed"):
+def insert_proposal(
+    conn,
+    proposal_id="proposal-1",
+    deployment_id="dep-1",
+    status="proposed",
+    expires_at="2099-05-07T00:00:00Z",
+):
     conn.execute(
         """
         INSERT INTO algo_polymarket_trade_proposals
@@ -40,7 +46,45 @@ def insert_proposal(conn, proposal_id="proposal-1", deployment_id="dep-1", statu
             10.0,
             status,
             "2026-05-06T00:00:00Z",
-            "2026-05-07T00:00:00Z",
+            expires_at,
+        ),
+    )
+
+
+def insert_trade(conn, deployment_id="dep-1"):
+    conn.execute(
+        """
+        INSERT INTO algo_polymarket_paper_trades
+            (deployment_id, asset_id, side, size, price, realized_pnl, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            deployment_id,
+            "asset-1",
+            "BUY",
+            10.0,
+            0.42,
+            0.0,
+            "manual approval fill",
+            "2026-05-06T00:01:00Z",
+        ),
+    )
+
+
+def insert_position(conn, deployment_id="dep-1"):
+    conn.execute(
+        """
+        INSERT INTO algo_polymarket_paper_positions
+            (deployment_id, asset_id, size, avg_price, realized_pnl, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            deployment_id,
+            "asset-1",
+            10.0,
+            0.42,
+            0.0,
+            "2026-05-06T00:01:00Z",
         ),
     )
 
@@ -125,6 +169,22 @@ def test_status_route_returns_terminal_status(tmp_path):
     assert body["live_enabled"] is False
 
 
+def test_api_allows_local_web_terminal_cors(tmp_path):
+    db_path = tmp_path / "bot.db"
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    response = client.options(
+        "/api/proposals",
+        headers={
+            "Origin": "http://127.0.0.1:4177",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:4177"
+
+
 def test_audit_route_returns_events(tmp_path):
     db_path = tmp_path / "bot.db"
     conn = sqlite3.connect(db_path)
@@ -199,6 +259,28 @@ def test_candidates_signals_and_skips_routes_return_deployment_rows(tmp_path):
     assert [row["reason"] for row in skips.json()["skips"]] == ["liquidity_below_threshold"]
 
 
+def test_trades_and_positions_routes_return_paper_rows(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_trade(conn)
+    insert_trade(conn, deployment_id="other-dep")
+    insert_position(conn)
+    insert_position(conn, deployment_id="other-dep")
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    trades = client.get("/api/trades?deployment_id=dep-1")
+    positions = client.get("/api/positions?deployment_id=dep-1")
+
+    assert trades.status_code == 200
+    assert positions.status_code == 200
+    assert [row["asset_id"] for row in trades.json()["trades"]] == ["asset-1"]
+    assert [row["asset_id"] for row in positions.json()["positions"]] == ["asset-1"]
+
+
 def test_signals_route_degrades_malformed_features_to_empty_object(tmp_path):
     db_path = tmp_path / "bot.db"
     conn = sqlite3.connect(db_path)
@@ -214,8 +296,16 @@ def test_signals_route_degrades_malformed_features_to_empty_object(tmp_path):
     assert response.json()["signals"][0]["features"] == {}
 
 
-def test_kill_switch_records_paper_only_audit_event(tmp_path):
+def test_kill_switch_records_paper_only_audit_event_and_cancels_open_proposals(tmp_path):
     db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_proposal(conn, proposal_id="open-1", status="proposed")
+    insert_proposal(conn, proposal_id="open-2", status="approved")
+    insert_proposal(conn, proposal_id="closed-1", status="filled")
+    conn.commit()
+    conn.close()
+
     client = TestClient(create_app(db_path=str(db_path)))
 
     response = client.post(
@@ -233,8 +323,11 @@ def test_kill_switch_records_paper_only_audit_event(tmp_path):
     assert response.json()["action"] == "kill_switch"
 
     events = client.get("/api/audit?deployment_id=dep-1").json()["events"]
-    assert len(events) == 1
-    assert events[0]["action"] == "kill_switch"
+    proposals = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"]
+    statuses = {proposal["proposal_id"]: proposal["status"] for proposal in proposals}
+
+    assert statuses == {"open-1": "cancelled", "open-2": "cancelled", "closed-1": "filled"}
+    assert [event["action"] for event in events] == ["kill_switch", "proposal_cancelled", "proposal_cancelled"]
     assert events[0]["entity_type"] == "deployment"
     assert events[0]["result"] == "accepted"
 
@@ -365,6 +458,38 @@ def test_approve_expired_proposal_returns_409_failed_audit_and_preserves_status(
     assert event["after"]["status"] == "expired"
     assert event["result"] == "failed"
     assert event["reason"] == "proposal_not_proposed"
+
+
+def test_approve_past_ttl_proposed_proposal_marks_expired_and_returns_409(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_proposal(conn, proposal_id="past-ttl-1", expires_at="2020-01-01T00:00:00Z")
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    response = client.post(
+        "/api/proposals/past-ttl-1/approve",
+        json={
+            "deployment_id": "dep-1",
+            "strategy_id": "strat-1",
+            "actor_id": "reviewer",
+            "reason": "manual approve",
+            "request_id": "req-past-ttl",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "proposal_expired"
+
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    assert proposal["status"] == "expired"
+
+    event = client.get("/api/audit?deployment_id=dep-1").json()["events"][0]
+    assert event["action"] == "approve"
+    assert event["result"] == "failed"
+    assert event["reason"] == "proposal_expired"
 
 
 def test_cross_deployment_approve_and_reject_return_404_without_changing_original(tmp_path):
