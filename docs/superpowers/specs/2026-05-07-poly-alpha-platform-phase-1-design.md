@@ -162,7 +162,10 @@ Required opportunity transition mapping:
 | --- | --- | --- | --- |
 | scanner ignores candidate before opportunity creation | no opportunity; write scan result | n/a | n/a |
 | opportunity discovered but not researched | `ignored` or `watch` | n/a | n/a |
-| evidence pack passes Exploration Gate | `watch` | n/a | n/a |
+| scan creates opportunity and evidence pack | `watch` | n/a | n/a |
+| Exploration Gate passes | `watch` | n/a | n/a |
+| Exploration Gate watches | `watch` | n/a | n/a |
+| Exploration Gate rejects | `rejected` | n/a | n/a |
 | shadow signal created | `shadow` | `shadow` | n/a |
 | validation passes but not promoted | `validated` | `validated` | n/a |
 | validation fails | `rejected` | `rejected` | n/a |
@@ -335,7 +338,7 @@ Each template must be reported separately. A single combined return is not enoug
 
 Only promoted signals can enter the existing paper proposal queue.
 
-Exploration Gate is a real pre-shadow quality gate. It decides whether an opportunity receives an evidence pack and can proceed to agent review/shadow signal creation. It must write an exploration decision and audit event.
+Exploration Gate is a real pre-shadow quality gate. The order is fixed: deterministic scan creates an opportunity and evidence pack first; then Exploration Gate decides whether that evidence pack can proceed to agent review and shadow signal creation. It must write an exploration decision and audit event.
 
 Exploration gate defaults:
 
