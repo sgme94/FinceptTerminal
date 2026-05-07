@@ -184,6 +184,7 @@ def calculate_template_result(
     now: str,
 ) -> dict[str, Any]:
     signal_at = _parse_timestamp(shadow_signal.get("created_at", ""))
+    now_at = _parse_timestamp(now)
     entry_price = _price(entry_snapshot)
     exit_snapshot = _select_exit_snapshot(
         validation_type,
@@ -241,6 +242,8 @@ def calculate_template_result(
             entry_price,
             snapshots,
             signal_at,
+            exit_snapshot=exit_snapshot,
+            now_at=now_at,
             side=shadow_signal.get("side", ""),
             favorable=False,
         ),
@@ -248,6 +251,8 @@ def calculate_template_result(
             entry_price,
             snapshots,
             signal_at,
+            exit_snapshot=exit_snapshot,
+            now_at=now_at,
             side=shadow_signal.get("side", ""),
             favorable=True,
         ),
@@ -320,8 +325,8 @@ def _select_exit_snapshot(
         target_at = signal_at + timedelta(seconds=int(config.get("fixed_horizon_sec", 3600)))
         return _earliest_snapshot_at_or_after(future, target_at) or _latest_snapshot(future)
     if validation_type == "target_stop":
-        target_return = config.get("target_return", 0.10)
-        stop_return = config.get("stop_return", -0.05)
+        target_return = _config_number(config, "target_return", 0.10)
+        stop_return = _config_number(config, "stop_return", -0.05)
         for snapshot in sorted(future, key=_snapshot_time_key):
             gross_return = _gross_return(entry_price, _price(snapshot), side)
             if gross_return is None:
@@ -475,16 +480,32 @@ def _max_excursion(
     snapshots: list[dict[str, Any]],
     signal_at: datetime | None,
     *,
+    exit_snapshot: dict[str, Any] | None,
+    now_at: datetime | None,
     side: str,
     favorable: bool,
 ) -> float | None:
     if not _is_number(entry_price) or signal_at is None:
         return None
+    exit_at = (
+        _parse_timestamp(exit_snapshot.get("observed_at", ""))
+        if exit_snapshot is not None
+        else None
+    )
+    latest_allowed = now_at
+    if exit_at is not None:
+        latest_allowed = min(exit_at, now_at) if now_at is not None else exit_at
     moves = []
     for snapshot in snapshots:
         observed_at = _parse_timestamp(snapshot.get("observed_at", ""))
         price = _price(snapshot)
-        if observed_at is None or observed_at < signal_at or not _is_number(price):
+        if (
+            observed_at is None
+            or observed_at < signal_at
+            or latest_allowed is None
+            or observed_at > latest_allowed
+            or not _is_number(price)
+        ):
             continue
         moves.append(_directional_move(entry_price, price, side))
     if not moves:
@@ -506,7 +527,7 @@ def _snapshot_is_between_signal_and_now(
     observed_at = _parse_timestamp(snapshot.get("observed_at", ""))
     if observed_at is None or observed_at < signal_at:
         return False
-    return now_at is None or observed_at <= now_at
+    return now_at is not None and observed_at <= now_at
 
 
 def _empty_event_metrics() -> dict[str, Any]:
@@ -538,6 +559,11 @@ def _parse_timestamp(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _config_number(config: dict[str, Any], key: str, default: float) -> float:
+    value = config.get(key, default)
+    return value if _is_number(value) else default
 
 
 def _is_number(value: Any) -> bool:

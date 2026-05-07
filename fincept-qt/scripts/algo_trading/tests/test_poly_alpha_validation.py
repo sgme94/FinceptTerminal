@@ -566,6 +566,86 @@ def test_validation_exit_selection_does_not_look_past_now():
     assert all(row["exit_price"] == pytest.approx(0.44) for row in rows.values())
 
 
+def test_validation_excursions_stop_at_each_exit_snapshot():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn)
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
+    _insert_snapshot(conn, "snap-fixed", "2026-05-07T12:05:00Z", 0.52)
+    _insert_snapshot(conn, "snap-post-fixed-spike", "2026-05-07T12:06:00Z", 0.90)
+    _insert_snapshot(conn, "snap-resolution", "2026-05-07T12:08:00Z", 0.56)
+    _insert_snapshot(conn, "snap-now", "2026-05-07T12:10:00Z", 0.55)
+
+    run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config(
+            {
+                "fixed_horizon_sec": 300,
+                "target_return": 0.95,
+                "stop_return": -0.50,
+                "resolution_at": "2026-05-07T12:08:00Z",
+            }
+        ),
+        NOW,
+    )
+
+    rows = {row["validation_type"]: row for row in list_validation_results(conn)}
+    assert rows["fixed_horizon"]["exit_snapshot_id"] == "snap-fixed"
+    assert rows["fixed_horizon"]["max_favorable_excursion"] == pytest.approx(0.02)
+    assert rows["target_stop"]["exit_snapshot_id"] == "snap-now"
+    assert rows["target_stop"]["max_favorable_excursion"] == pytest.approx(0.40)
+    assert rows["resolution_expiry"]["exit_snapshot_id"] == "snap-resolution"
+    assert rows["resolution_expiry"]["max_favorable_excursion"] == pytest.approx(0.40)
+
+
+def test_validation_invalid_now_does_not_use_future_snapshots():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn)
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
+    _insert_snapshot(conn, "snap-after-signal", "2026-05-07T12:05:00Z", 0.70)
+
+    run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config({"current_market_price": 0.44}),
+        "not-a-time",
+    )
+
+    rows = list_validation_results(conn)
+    assert {row["validation_type"] for row in rows} == {
+        "fixed_horizon",
+        "target_stop",
+        "resolution_expiry",
+    }
+    assert all(row["exit_snapshot_id"] == "" for row in rows)
+    assert all(row["exit_price"] == pytest.approx(0.44) for row in rows)
+    assert all(row["max_adverse_excursion"] == pytest.approx(0.0) for row in rows)
+    assert all(row["max_favorable_excursion"] == pytest.approx(0.0) for row in rows)
+
+
+def test_validation_target_stop_ignores_non_numeric_threshold_config():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn)
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
+    _insert_snapshot(conn, "snap-target-default", "2026-05-07T12:05:00Z", 0.56)
+
+    run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config(
+            {
+                "target_return": "bad",
+                "stop_return": None,
+            }
+        ),
+        NOW,
+    )
+
+    rows = {row["validation_type"]: row for row in list_validation_results(conn)}
+    assert rows["target_stop"]["exit_snapshot_id"] == "snap-target-default"
+    assert rows["target_stop"]["gross_return"] == pytest.approx(0.12)
+
+
 def test_validation_records_market_move_after_signal_per_exit_template():
     conn = _conn()
     shadow_signal_id = _seed_shadow_signal(conn)
