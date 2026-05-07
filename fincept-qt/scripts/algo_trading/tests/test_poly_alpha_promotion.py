@@ -435,6 +435,31 @@ def test_paper_proposal_bridge_requires_promotion_and_records_paper_queue_lineag
     assert "proposal_created" in [row["action"] for row in list_audit_events(conn, "dep-1")]
 
 
+def test_paper_proposal_bridge_rolls_back_when_opportunity_lineage_update_fails():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    conn.execute(
+        f"""
+        CREATE TRIGGER reject_opportunity_before_proposal_lineage
+        AFTER UPDATE OF proposal_id ON poly_alpha_promotion_decisions
+        WHEN NEW.promotion_id = '{promotion_id}'
+        BEGIN
+            UPDATE poly_alpha_opportunities
+            SET status = 'rejected'
+            WHERE opportunity_id = 'opp-promo';
+        END
+        """
+    )
+
+    with pytest.raises(ValueError, match="proposal_created"):
+        create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+
+    assert list_trade_proposals(conn, "dep-1") == []
+    assert list_promotion_decisions(conn)[0]["proposal_id"] == ""
+    assert "proposal_created" not in [row["action"] for row in list_poly_alpha_audit_events(conn)]
+
+
 def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit():
     conn = _conn()
     _seed_validated_shadow(conn)
@@ -532,6 +557,35 @@ def test_paper_fill_does_not_fill_proposal_when_opportunity_update_would_fail():
     assert list_opportunities(conn)[0]["status"] == "proposed"
     assert proposal["status"] == "approved"
     assert proposal["fill_trade_id"] == ""
+
+
+def test_paper_fill_rolls_back_when_opportunity_lineage_update_fails():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+    conn.execute(
+        f"""
+        CREATE TRIGGER reset_opportunity_before_fill_lineage
+        AFTER UPDATE OF status ON algo_polymarket_trade_proposals
+        WHEN NEW.proposal_id = '{proposal_id}' AND NEW.status = 'filled'
+        BEGIN
+            UPDATE poly_alpha_opportunities
+            SET status = 'rejected'
+            WHERE opportunity_id = 'opp-promo';
+        END
+        """
+    )
+
+    with pytest.raises(ValueError, match="paper_fill_recorded"):
+        record_paper_fill_recorded(conn, "opp-promo", proposal_id, "trade-1", NOW)
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert proposal["status"] == "approved"
+    assert proposal["fill_trade_id"] == ""
+    assert list_opportunities(conn)[0]["status"] == "approved"
+    assert "paper_fill_recorded" not in [row["action"] for row in list_poly_alpha_audit_events(conn)]
 
 
 @pytest.mark.parametrize(

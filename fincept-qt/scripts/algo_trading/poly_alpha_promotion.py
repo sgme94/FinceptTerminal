@@ -134,93 +134,102 @@ def create_paper_proposal_from_promotion(
     deployment_id: str,
     now: str,
 ) -> str:
-    promotion = _one(
-        [row for row in list_promotion_decisions(conn) if row["promotion_id"] == promotion_id],
-        "Promotion decision must exist and be promote",
-    )
-    if promotion["decision"] != "promote":
-        raise ValueError("Promotion decision must be promote before creating a proposal")
-    opportunity = _one(
-        [
-            row
-            for row in list_opportunities(conn)
-            if row["opportunity_id"] == promotion["opportunity_id"]
-        ],
-        f"Unknown opportunity_id: {promotion['opportunity_id']}",
-    )
-    shadow = _one(
-        [
-            row
-            for row in list_shadow_signals(conn)
-            if row["shadow_signal_id"] == promotion["shadow_signal_id"]
-        ],
-        f"Unknown shadow_signal_id: {promotion['shadow_signal_id']}",
-    )
-    if opportunity["status"] != "promoted" or shadow["status"] != "promoted":
-        raise ValueError("Promotion decision must leave opportunity and shadow promoted")
+    conn.execute("SAVEPOINT poly_alpha_promotion_bridge")
+    try:
+        promotion = _one(
+            [row for row in list_promotion_decisions(conn) if row["promotion_id"] == promotion_id],
+            "Promotion decision must exist and be promote",
+        )
+        if promotion["decision"] != "promote":
+            raise ValueError("Promotion decision must be promote before creating a proposal")
+        opportunity = _one(
+            [
+                row
+                for row in list_opportunities(conn)
+                if row["opportunity_id"] == promotion["opportunity_id"]
+            ],
+            f"Unknown opportunity_id: {promotion['opportunity_id']}",
+        )
+        shadow = _one(
+            [
+                row
+                for row in list_shadow_signals(conn)
+                if row["shadow_signal_id"] == promotion["shadow_signal_id"]
+            ],
+            f"Unknown shadow_signal_id: {promotion['shadow_signal_id']}",
+        )
+        if opportunity["status"] != "promoted" or shadow["status"] != "promoted":
+            raise ValueError("Promotion decision must leave opportunity and shadow promoted")
 
-    features = {
-        "source": "poly_alpha",
-        "promotion_id": promotion_id,
-        "shadow_signal_id": shadow["shadow_signal_id"],
-        "opportunity_id": opportunity["opportunity_id"],
-        "strategy_version_id": promotion["strategy_version_id"],
-        "paper_only": True,
-    }
-    signal = SignalDecision(
-        asset_id=shadow["adapter_metadata"].get("asset_id") or shadow["outcome_id"],
-        action=shadow["side"],
-        entry_price=shadow["observed_price"],
-        estimated_probability=shadow["estimated_probability"],
-        edge=shadow["edge"],
-        confidence=shadow["confidence"],
-        reason=promotion["reason"],
-        features=features,
-    )
-    size = float(promotion["trading_metrics"].get("paper_order_size") or 0.0)
-    proposal_id = record_trade_proposal(
-        conn,
-        deployment_id,
-        promotion["strategy_version_id"],
-        opportunity["venue_market_id"],
-        opportunity["venue_contract_id"],
-        signal,
-        size,
-        now,
-        shadow["expires_at"],
-    )
-    conn.execute(
-        """
-        UPDATE poly_alpha_promotion_decisions
-        SET proposal_id = ?
-        WHERE promotion_id = ?
-        """,
-        (proposal_id, promotion_id),
-    )
-    update_opportunity_status(
-        conn,
-        opportunity_id=opportunity["opportunity_id"],
-        lifecycle_event="proposal_created",
-        updated_at=now,
-        expected_status="promoted",
-        write_audit=True,
-    )
-    record_audit_event(
-        conn,
-        deployment_id,
-        promotion["strategy_version_id"],
-        "system",
-        "poly_alpha_promotion",
-        "proposal_created",
-        "proposal",
-        proposal_id,
-        {},
-        {"status": "proposed", "features": features},
-        "success",
-        "promotion_approved",
-        "",
-        now,
-    )
+        features = {
+            "source": "poly_alpha",
+            "promotion_id": promotion_id,
+            "shadow_signal_id": shadow["shadow_signal_id"],
+            "opportunity_id": opportunity["opportunity_id"],
+            "strategy_version_id": promotion["strategy_version_id"],
+            "paper_only": True,
+        }
+        signal = SignalDecision(
+            asset_id=shadow["adapter_metadata"].get("asset_id") or shadow["outcome_id"],
+            action=shadow["side"],
+            entry_price=shadow["observed_price"],
+            estimated_probability=shadow["estimated_probability"],
+            edge=shadow["edge"],
+            confidence=shadow["confidence"],
+            reason=promotion["reason"],
+            features=features,
+        )
+        size = float(promotion["trading_metrics"].get("paper_order_size") or 0.0)
+        proposal_id = record_trade_proposal(
+            conn,
+            deployment_id,
+            promotion["strategy_version_id"],
+            opportunity["venue_market_id"],
+            opportunity["venue_contract_id"],
+            signal,
+            size,
+            now,
+            shadow["expires_at"],
+        )
+        conn.execute(
+            """
+            UPDATE poly_alpha_promotion_decisions
+            SET proposal_id = ?
+            WHERE promotion_id = ?
+            """,
+            (proposal_id, promotion_id),
+        )
+        updated = update_opportunity_status(
+            conn,
+            opportunity_id=opportunity["opportunity_id"],
+            lifecycle_event="proposal_created",
+            updated_at=now,
+            expected_status="promoted",
+            write_audit=True,
+        )
+        if not updated:
+            raise ValueError("proposal_created opportunity lineage update failed")
+        record_audit_event(
+            conn,
+            deployment_id,
+            promotion["strategy_version_id"],
+            "system",
+            "poly_alpha_promotion",
+            "proposal_created",
+            "proposal",
+            proposal_id,
+            {},
+            {"status": "proposed", "features": features},
+            "success",
+            "promotion_approved",
+            "",
+            now,
+        )
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT poly_alpha_promotion_bridge")
+        conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+        raise
+    conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
     return proposal_id
 
 
@@ -318,27 +327,38 @@ def record_paper_fill_recorded(
     )
     if opportunity["status"] != "approved":
         return False
-    updated = update_trade_proposal_status(
-        conn,
-        proposal_id,
-        "filled",
-        "polymarket_runner",
-        now,
-        "paper_fill_recorded",
-        fill_trade_id=fill_trade_id,
-        deployment_id=bridge["deployment_id"],
-        expected_status="approved",
-    )
-    if not updated:
-        return False
-    return update_opportunity_status(
-        conn,
-        opportunity_id=opportunity_id,
-        lifecycle_event="paper_fill_recorded",
-        updated_at=now,
-        expected_status="approved",
-        write_audit=True,
-    )
+    conn.execute("SAVEPOINT poly_alpha_promotion_bridge")
+    try:
+        updated = update_trade_proposal_status(
+            conn,
+            proposal_id,
+            "filled",
+            "polymarket_runner",
+            now,
+            "paper_fill_recorded",
+            fill_trade_id=fill_trade_id,
+            deployment_id=bridge["deployment_id"],
+            expected_status="approved",
+        )
+        if not updated:
+            conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+            return False
+        updated = update_opportunity_status(
+            conn,
+            opportunity_id=opportunity_id,
+            lifecycle_event="paper_fill_recorded",
+            updated_at=now,
+            expected_status="approved",
+            write_audit=True,
+        )
+        if not updated:
+            raise ValueError("paper_fill_recorded opportunity lineage update failed")
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT poly_alpha_promotion_bridge")
+        conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+        raise
+    conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+    return True
 
 
 def _gate_decision(
