@@ -529,10 +529,15 @@ export async function getTerminalSnapshot(deploymentId = "default"): Promise<Ter
     getSignals(deploymentId),
     getRiskLimits()
   ]);
+  const exposureUsd = positions.reduce((total, position) => total + position.exposureUsd, 0);
 
   return {
     ...mockTerminalSnapshot,
-    status,
+    status: {
+      ...status,
+      activeMarkets: positions.length,
+      exposureUsd
+    },
     markets,
     signals,
     proposals,

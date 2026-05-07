@@ -142,13 +142,7 @@ export function AuditPage() {
       ),
     [deploymentFilter, trades]
   );
-  const filteredSignals = useMemo(
-    () =>
-      signals.filter(
-        (signal) => deploymentFilter.trim() === "" || signal.id.includes(deploymentFilter.trim())
-      ),
-    [deploymentFilter, signals]
-  );
+  const filteredSignals = useMemo(() => signals, [signals]);
 
   return (
     <section className="workspace-panel page-stack" aria-busy={isLoading}>

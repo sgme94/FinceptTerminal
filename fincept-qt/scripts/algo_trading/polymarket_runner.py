@@ -78,6 +78,7 @@ def run_polymarket_cycle(
                 if candidate.asset_id not in books:
                     books[candidate.asset_id] = source.fetch_clob_order_book(candidate.asset_id)
 
+        _expire_proposed_proposals(conn, deployment_id, now)
         positions = load_positions(conn, deployment_id)
         exited_assets = _process_exits(conn, deployment_id, positions, books, overrides, cfg, now, result)
         _process_approved_proposals(
@@ -355,12 +356,14 @@ def _process_approved_proposals(conn, deployment_id, positions, books, source, c
                 reason=fill.reason,
             )
             continue
+        if not _claim_proposal(conn, deployment_id, proposal):
+            continue
         position = apply_fill_to_position(positions.get(asset_id), fill)
         if position is not None:
             positions[asset_id] = position
             upsert_position(conn, deployment_id, position, now)
         trade_id = record_trade(conn, deployment_id, fill, now)
-        _transition_proposal(
+        if not _transition_proposal(
             conn,
             deployment_id,
             proposal,
@@ -370,8 +373,37 @@ def _process_approved_proposals(conn, deployment_id, positions, books, source, c
             result="success",
             reason=proposal.get("decision_reason") or "manual approval",
             fill_trade_id=trade_id,
-        )
+        ):
+            raise RuntimeError("proposal_transition_conflict")
         result["fills"] += 1
+
+
+def _expire_proposed_proposals(conn, deployment_id, now) -> None:
+    for proposal in list_trade_proposals(conn, deployment_id):
+        if proposal["status"] == "proposed" and _is_expired(proposal.get("expires_at"), now):
+            _transition_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                "expired",
+                now,
+                action="proposal_expired",
+                result="failed",
+                reason="proposal_expired",
+            )
+
+
+def _claim_proposal(conn, deployment_id, proposal) -> bool:
+    return update_trade_proposal_status(
+        conn,
+        proposal["proposal_id"],
+        proposal["status"],
+        proposal.get("decided_by") or "polymarket_runner",
+        proposal.get("decided_at") or "",
+        proposal.get("decision_reason") or "",
+        deployment_id=deployment_id,
+        expected_status=proposal["status"],
+    )
 
 
 def _transition_proposal(
@@ -385,12 +417,12 @@ def _transition_proposal(
     result,
     reason,
     fill_trade_id: str | None = None,
-) -> None:
+) -> bool:
     after = dict(proposal)
     after["status"] = status
     if fill_trade_id:
         after["fill_trade_id"] = fill_trade_id
-    update_trade_proposal_status(
+    updated = update_trade_proposal_status(
         conn,
         proposal["proposal_id"],
         status,
@@ -398,7 +430,11 @@ def _transition_proposal(
         proposal.get("decided_at") or now,
         proposal.get("decision_reason") or reason,
         fill_trade_id=fill_trade_id,
+        deployment_id=deployment_id,
+        expected_status=proposal["status"],
     )
+    if not updated:
+        return False
     record_audit_event(
         conn,
         deployment_id,
@@ -415,6 +451,7 @@ def _transition_proposal(
         "",
         now,
     )
+    return True
 
 
 def _signal_for_candidate(candidate, book, overrides, cfg) -> SignalDecision:

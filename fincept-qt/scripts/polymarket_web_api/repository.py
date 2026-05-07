@@ -52,6 +52,10 @@ def is_past_timestamp(value: str | None, now: str) -> bool:
     return expires_at is not None and now_dt is not None and expires_at <= now_dt
 
 
+def find_proposal(conn: sqlite3.Connection, deployment_id: str, proposal_id: str) -> dict[str, Any] | None:
+    return next((item for item in list_trade_proposals(conn, deployment_id) if item["proposal_id"] == proposal_id), None)
+
+
 def _parse_utc(value: str) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -261,14 +265,36 @@ class PolymarketRepository:
             if is_past_timestamp(before.get("expires_at"), now):
                 after = dict(before)
                 after["status"] = "expired"
-                update_trade_proposal_status(
+                updated = update_trade_proposal_status(
                     conn,
                     proposal_id,
                     "expired",
                     before.get("decided_by", ""),
                     before.get("decided_at", ""),
                     before.get("decision_reason", ""),
+                    deployment_id=deployment_id,
+                    expected_status="proposed",
                 )
+                if not updated:
+                    current = find_proposal(conn, deployment_id, proposal_id) or dict(before)
+                    record_audit_event(
+                        conn,
+                        deployment_id=deployment_id,
+                        strategy_id=strategy_id,
+                        actor_type="user",
+                        actor_id=actor_id,
+                        action=action,
+                        entity_type="proposal",
+                        entity_id=proposal_id,
+                        before=before,
+                        after=current,
+                        result="failed",
+                        reason="proposal_not_proposed",
+                        request_id=request_id,
+                        now=now,
+                    )
+                    conn.commit()
+                    raise InvalidProposalStateError(proposal_id)
                 record_audit_event(
                     conn,
                     deployment_id=deployment_id,
@@ -287,7 +313,36 @@ class PolymarketRepository:
                 )
                 conn.commit()
                 raise ProposalExpiredError(proposal_id)
-            update_trade_proposal_status(conn, proposal_id, status, actor_id, now, reason)
+            updated = update_trade_proposal_status(
+                conn,
+                proposal_id,
+                status,
+                actor_id,
+                now,
+                reason,
+                deployment_id=deployment_id,
+                expected_status="proposed",
+            )
+            if not updated:
+                current = find_proposal(conn, deployment_id, proposal_id) or dict(before)
+                record_audit_event(
+                    conn,
+                    deployment_id=deployment_id,
+                    strategy_id=strategy_id,
+                    actor_type="user",
+                    actor_id=actor_id,
+                    action=action,
+                    entity_type="proposal",
+                    entity_id=proposal_id,
+                    before=before,
+                    after=current,
+                    result="failed",
+                    reason="proposal_not_proposed",
+                    request_id=request_id,
+                    now=now,
+                )
+                conn.commit()
+                raise InvalidProposalStateError(proposal_id)
             after = dict(before)
             after.update(
                 {
@@ -349,14 +404,18 @@ class PolymarketRepository:
             for proposal in open_proposals:
                 after = dict(proposal)
                 after["status"] = "cancelled"
-                update_trade_proposal_status(
+                updated = update_trade_proposal_status(
                     conn,
                     proposal["proposal_id"],
                     "cancelled",
                     actor_id,
                     now,
                     reason or "kill_switch",
+                    deployment_id=deployment_id,
+                    expected_status=proposal["status"],
                 )
+                if not updated:
+                    after = find_proposal(conn, deployment_id, proposal["proposal_id"]) or after
                 record_audit_event(
                     conn,
                     deployment_id=deployment_id,
@@ -368,8 +427,8 @@ class PolymarketRepository:
                     entity_id=proposal["proposal_id"],
                     before=proposal,
                     after=after,
-                    result="success",
-                    reason=reason or "kill_switch",
+                    result="success" if updated else "failed",
+                    reason=(reason or "kill_switch") if updated else "proposal_not_open",
                     request_id=request_id,
                     now=now,
                 )

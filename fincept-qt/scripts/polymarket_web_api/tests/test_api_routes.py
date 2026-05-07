@@ -2,6 +2,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
@@ -11,6 +12,7 @@ for path in (SCRIPT_ROOT, ALGO_ROOT):
         sys.path.insert(0, str(path))
 
 from polymarket_web_api.app import create_app
+from polymarket_web_api.repository import InvalidProposalStateError, PolymarketRepository
 from polymarket_store import ensure_polymarket_schema, record_audit_event
 
 
@@ -392,6 +394,104 @@ def test_approve_and_reject_update_proposal_state_and_audit(tmp_path):
 
     actions = [event["action"] for event in client.get("/api/audit?deployment_id=dep-1").json()["events"]]
     assert actions == ["approve", "reject"]
+
+
+def test_repository_approve_does_not_overwrite_state_changed_after_read(tmp_path, monkeypatch):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_proposal(conn, proposal_id="race-approve")
+    conn.commit()
+    conn.close()
+
+    from polymarket_web_api import repository as repository_module
+
+    original_update = repository_module.update_trade_proposal_status
+    raced = {"done": False}
+
+    def racing_update(conn, proposal_id, status, *args, **kwargs):
+        if proposal_id == "race-approve" and status == "approved" and not raced["done"]:
+            raced["done"] = True
+            original_update(
+                conn,
+                proposal_id,
+                "cancelled",
+                "kill-switch",
+                "2026-05-06T00:00:01Z",
+                "paper kill switch",
+            )
+        return original_update(conn, proposal_id, status, *args, **kwargs)
+
+    monkeypatch.setattr(repository_module, "update_trade_proposal_status", racing_update)
+    repo = PolymarketRepository(str(db_path))
+
+    with pytest.raises(InvalidProposalStateError):
+        repo.decide_proposal(
+            proposal_id="race-approve",
+            deployment_id="dep-1",
+            strategy_id="strat-1",
+            status="approved",
+            actor_id="reviewer",
+            reason="manual approve",
+            request_id="req-race",
+            now="2026-05-06T00:00:02Z",
+        )
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    event = client.get("/api/audit?deployment_id=dep-1").json()["events"][0]
+
+    assert proposal["status"] == "cancelled"
+    assert event["action"] == "approve"
+    assert event["result"] == "failed"
+    assert event["reason"] == "proposal_not_proposed"
+
+
+def test_repository_kill_switch_does_not_cancel_state_changed_after_read(tmp_path, monkeypatch):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_proposal(conn, proposal_id="race-kill", status="approved")
+    conn.commit()
+    conn.close()
+
+    from polymarket_web_api import repository as repository_module
+
+    original_update = repository_module.update_trade_proposal_status
+    raced = {"done": False}
+
+    def racing_update(conn, proposal_id, status, *args, **kwargs):
+        if proposal_id == "race-kill" and status == "cancelled" and not raced["done"]:
+            raced["done"] = True
+            original_update(
+                conn,
+                proposal_id,
+                "filled",
+                "runner",
+                "2026-05-06T00:00:01Z",
+                "paper fill",
+            )
+        return original_update(conn, proposal_id, status, *args, **kwargs)
+
+    monkeypatch.setattr(repository_module, "update_trade_proposal_status", racing_update)
+    repo = PolymarketRepository(str(db_path))
+
+    repo.kill_switch(
+        deployment_id="dep-1",
+        strategy_id="strat-1",
+        actor_id="reviewer",
+        reason="paper kill switch",
+        request_id="req-race-kill",
+        now="2026-05-06T00:00:02Z",
+    )
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    events = client.get("/api/audit?deployment_id=dep-1").json()["events"]
+
+    assert proposal["status"] == "filled"
+    assert [event["action"] for event in events] == ["kill_switch", "proposal_cancelled"]
+    assert events[1]["result"] == "failed"
 
 
 def test_missing_proposal_approve_returns_404_and_failed_audit(tmp_path):

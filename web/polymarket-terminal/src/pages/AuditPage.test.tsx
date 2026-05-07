@@ -180,4 +180,16 @@ describe("AuditPage", () => {
     expect(screen.getByText("signal-1")).toBeInTheDocument();
     expect(screen.getByText("Approved signal")).toBeInTheDocument();
   });
+
+  it("keeps signal rows visible when deployment filter matches events but not signal ids", async () => {
+    const user = userEvent.setup();
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/deployment/i), "dep-test");
+    await user.click(screen.getByRole("tab", { name: /signals/i }));
+
+    expect(screen.getByText("signal-1")).toBeInTheDocument();
+  });
 });

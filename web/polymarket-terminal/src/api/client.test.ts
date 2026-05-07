@@ -509,8 +509,58 @@ describe("terminal api client", () => {
         source: "api"
       })
     ]);
+    expect(snapshot.status.exposureUsd).toBe(0);
     expect(snapshot.markets.length).toBeGreaterThan(0);
     expect(snapshot.signals.length).toBeGreaterThan(0);
     expect(snapshot.riskLimits.length).toBeGreaterThan(0);
+  });
+
+  it("derives snapshot exposure and active markets from paper positions", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "http://localhost:8765/api/bot/status") {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ mode: "paper", status: "running", healthy: true })
+        });
+      }
+
+      if (url === "http://localhost:8765/api/positions?deployment_id=default") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              positions: [
+                {
+                  deployment_id: "default",
+                  asset_id: "asset-1",
+                  size: 10,
+                  avg_price: 0.4,
+                  realized_pnl: 1,
+                  updated_at: "2026-05-06T01:00:00.000Z"
+                },
+                {
+                  deployment_id: "default",
+                  asset_id: "asset-2",
+                  size: 5,
+                  avg_price: 0.6,
+                  realized_pnl: 0,
+                  updated_at: "2026-05-06T01:00:00.000Z"
+                }
+              ]
+            })
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ proposals: [], trades: [], events: [], candidates: [], signals: [] })
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = await getTerminalSnapshot();
+
+    expect(snapshot.status.exposureUsd).toBe(7);
+    expect(snapshot.status.activeMarkets).toBe(2);
   });
 });

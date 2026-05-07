@@ -188,19 +188,30 @@ def update_trade_proposal_status(
     decided_at: str,
     decision_reason: str,
     fill_trade_id: str | None = None,
-) -> None:
-    conn.execute(
-        """
+    deployment_id: str | None = None,
+    expected_status: str | None = None,
+) -> bool:
+    filters = ["proposal_id = ?"]
+    params = [status, decided_by, decided_at, decision_reason, fill_trade_id, fill_trade_id, proposal_id]
+    if deployment_id is not None:
+        filters.append("deployment_id = ?")
+        params.append(deployment_id)
+    if expected_status is not None:
+        filters.append("status = ?")
+        params.append(expected_status)
+    cursor = conn.execute(
+        f"""
         UPDATE algo_polymarket_trade_proposals
         SET status = ?,
             decided_by = ?,
             decided_at = ?,
             decision_reason = ?,
             fill_trade_id = CASE WHEN ? IS NULL THEN fill_trade_id ELSE ? END
-        WHERE proposal_id = ?
+        WHERE {" AND ".join(filters)}
         """,
-        (status, decided_by, decided_at, decision_reason, fill_trade_id, fill_trade_id, proposal_id),
+        params,
     )
+    return cursor.rowcount > 0
 
 
 def list_trade_proposals(conn: sqlite3.Connection, deployment_id: str) -> list[dict]:

@@ -15,8 +15,12 @@ test.describe("Polymarket terminal visual shell", () => {
   test("desktop 1700x900 loads shell with right rail and no horizontal overflow", async ({ page }) => {
     await page.setViewportSize({ width: 1700, height: 900 });
     const statusResponse = page.waitForResponse("http://127.0.0.1:8765/api/bot/status");
+    const positionsResponse = page.waitForResponse("http://127.0.0.1:8765/api/positions?deployment_id=default");
+    const tradesResponse = page.waitForResponse("http://127.0.0.1:8765/api/trades?deployment_id=default");
     await page.goto("/");
     expect((await statusResponse).ok()).toBe(true);
+    expect((await positionsResponse).ok()).toBe(true);
+    expect((await tradesResponse).ok()).toBe(true);
 
     await expect(page.getByLabel("Polymarket terminal")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
