@@ -213,6 +213,16 @@ def test_watch_opportunity_ttl_expired_preserves_missing_signal_state():
     assert state.opportunity_status == "expired"
     assert state.shadow_signal_status is None
     assert state.promotion_decision is None
+
+def test_opportunity_ttl_expired_preserves_existing_signal_and_promotion_state():
+    state = apply_opportunity_transition(
+        "opportunity_ttl_expired",
+        previous_shadow_signal_status="validated",
+        previous_promotion_decision="watch",
+    )
+    assert state.opportunity_status == "expired"
+    assert state.shadow_signal_status == "validated"
+    assert state.promotion_decision == "watch"
 ```
 
 - [ ] **Step 3: Run the failing model tests**
@@ -571,10 +581,16 @@ git commit -m "feat: add poly alpha signal validation"
 
 Assert promotion requires:
 
+- `min_promotion_samples >= 30` or `min_promotion_history_days >= 90`.
 - cost-adjusted net return > 0
 - positive median CLV after costs
 - max drawdown above threshold
+- hit rate/payoff ratio passes the spec thresholds.
 - capacity >= 2x paper order size
+- Brier score and calibration error are recorded where resolved outcomes exist.
+- edge decay is recorded for unresolved markets.
+- approval latency impact is recorded for promoted proposals.
+- lookahead and survivorship checks pass.
 - no unresolved Critic blocker
 - Risk Reviewer approval.
 - event-time validation does not have a blocking `late_information` reason.
