@@ -532,6 +532,57 @@ def test_scan_invalid_probability_types_do_not_crash_or_create_opportunity(
     assert list_opportunities(conn) == [], case
 
 
+@pytest.mark.parametrize(
+    ("case", "best_bid", "best_ask"),
+    [
+        ("string_bid_ask", "0.41", "0.43"),
+        ("bool_bid_ask", True, False),
+        ("bid_below_zero", -0.01, 0.43),
+        ("ask_above_one", 0.0, 1.01),
+        ("bid_above_ask", 0.44, 0.43),
+    ],
+)
+def test_scan_invalid_bid_ask_fallback_does_not_create_opportunity(
+    case,
+    best_bid,
+    best_ask,
+):
+    conn = _conn()
+    _seed_versions(conn)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document(f"doc-{case}", f"market-{case}")],
+        [
+            _snapshot(
+                f"snap-{case}",
+                f"market-{case}",
+                qualifies=True,
+                market_probability=None,
+                mid_price=None,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                last_trade_price=None,
+                estimated_probability=0.57,
+            )
+        ],
+        NOW,
+    )
+
+    scan_result = list_scan_results(conn, result["scan_run_id"])[0]
+    assert scan_result["decision"] == "watch", case
+    assert scan_result["reason"] == "insufficient_edge", case
+    assert scan_result["created_opportunity_id"] == "", case
+    assert list_opportunities(conn) == [], case
+
+
 def test_deterministic_scan_rolls_back_writes_on_failure():
     conn = _conn()
     _seed_versions(conn)
@@ -1069,6 +1120,44 @@ def test_decide_exploration_uses_latest_snapshot_by_parsed_observed_at():
         0.53
     )
     assert decision["metrics"]["current_market_metrics"]["spread"] == pytest.approx(0.03)
+
+
+@pytest.mark.parametrize(
+    ("case", "snapshot_overrides"),
+    [
+        ("mid_price_below_zero", {"mid_price": -0.1}),
+        ("mid_price_above_one", {"mid_price": 1.2}),
+        ("negative_spread", {"spread": -0.01}),
+        ("nan_spread", {"spread": float("nan")}),
+        ("negative_bid_depth", {"top_bid_depth": -1.0}),
+        ("nan_bid_depth", {"top_bid_depth": float("nan")}),
+        ("negative_ask_depth", {"top_ask_depth": -1.0}),
+        ("negative_liquidity", {"liquidity": -1.0}),
+        ("nan_liquidity", {"liquidity": float("nan")}),
+    ],
+)
+def test_decide_exploration_rejects_invalid_current_market_metrics(
+    case,
+    snapshot_overrides,
+):
+    conn = _conn()
+    opportunity_id, evidence_pack_id = _seed_full_evidence(
+        conn,
+        snapshot_overrides=snapshot_overrides,
+    )
+
+    decide_exploration(
+        conn,
+        opportunity_id,
+        evidence_pack_id,
+        default_poly_alpha_config({"historical_sample_count": 10}),
+        NOW,
+    )
+
+    decision = list_exploration_decisions(conn)[0]
+    assert decision["decision"] == "reject", case
+    assert decision["reason"] == "missing_market_metrics", case
+    assert list_opportunities(conn)[0]["status"] == "rejected", case
 
 
 @pytest.mark.parametrize(

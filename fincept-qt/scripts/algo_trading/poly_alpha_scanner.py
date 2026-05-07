@@ -477,7 +477,13 @@ def _market_probability(snapshot: dict[str, Any]) -> float | None:
         return snapshot["mid_price"]
     best_bid = snapshot.get("best_bid")
     best_ask = snapshot.get("best_ask")
-    if best_bid is not None and best_ask is not None:
+    if best_bid is not None or best_ask is not None:
+        if not (
+            _is_probability(best_bid)
+            and _is_probability(best_ask)
+            and best_bid <= best_ask
+        ):
+            return None
         return (best_bid + best_ask) / 2
     return snapshot.get("last_trade_price")
 
@@ -652,6 +658,16 @@ def _current_market_metrics(
     }
 
 
+def _has_valid_current_market_metrics(metrics: dict[str, Any]) -> bool:
+    return (
+        _is_probability(metrics.get("market_probability"))
+        and _is_non_negative_finite_number(metrics.get("spread"))
+        and _is_non_negative_finite_number(metrics.get("top_bid_depth"))
+        and _is_non_negative_finite_number(metrics.get("top_ask_depth"))
+        and _is_non_negative_finite_number(metrics.get("liquidity"))
+    )
+
+
 def _exploration_decision(metrics: dict[str, Any]) -> tuple[str, str]:
     if metrics["historical_sample_count"] < metrics["min_exploration_samples"]:
         return "watch", "insufficient_exploration_samples"
@@ -666,7 +682,7 @@ def _exploration_decision(metrics: dict[str, Any]) -> tuple[str, str]:
         return "reject", "missing_current_snapshot"
     if not metrics["event_market_link_confidence_recorded"]:
         return "reject", "missing_link_confidence"
-    if any(value is None for value in metrics["current_market_metrics"].values()):
+    if not _has_valid_current_market_metrics(metrics["current_market_metrics"]):
         return "reject", "missing_market_metrics"
     if not metrics["evidence_completeness_metrics_recorded"]:
         return "reject", "missing_evidence_completeness_metrics"
