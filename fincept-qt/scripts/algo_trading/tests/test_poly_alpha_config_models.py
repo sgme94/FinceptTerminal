@@ -9,6 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from poly_alpha_config import default_poly_alpha_config
+import poly_alpha_models as models
 from poly_alpha_models import apply_opportunity_transition
 
 
@@ -48,10 +49,96 @@ def test_post_approval_skip_is_first_class():
     assert state.promotion_decision == "promote"
 
 
+def test_opportunity_ignored_is_separate_from_scanner_ignore():
+    scanner_state = apply_opportunity_transition("scanner_ignore")
+    ignored_state = apply_opportunity_transition("opportunity_ignored")
+
+    assert scanner_state.opportunity_status is None
+    assert scanner_state.shadow_signal_status is None
+    assert scanner_state.promotion_decision is None
+    assert ignored_state.opportunity_status == "ignored"
+    assert ignored_state.shadow_signal_status is None
+    assert ignored_state.promotion_decision is None
+
+
+def test_public_status_promotion_and_reason_constants_match_contract():
+    assert models.OPPORTUNITY_STATUS_IGNORED == "ignored"
+    assert models.OPPORTUNITY_STATUS_WATCH == "watch"
+    assert models.OPPORTUNITY_STATUS_SHADOW == "shadow"
+    assert models.OPPORTUNITY_STATUS_VALIDATED == "validated"
+    assert models.OPPORTUNITY_STATUS_REJECTED == "rejected"
+    assert models.OPPORTUNITY_STATUS_PROMOTED == "promoted"
+    assert models.OPPORTUNITY_STATUS_PROPOSED == "proposed"
+    assert models.OPPORTUNITY_STATUS_APPROVED == "approved"
+    assert models.OPPORTUNITY_STATUS_FILLED == "filled"
+    assert models.OPPORTUNITY_STATUS_SKIPPED == "skipped"
+    assert models.OPPORTUNITY_STATUS_EXPIRED == "expired"
+    assert models.OPPORTUNITY_STATUSES == (
+        "ignored",
+        "watch",
+        "shadow",
+        "validated",
+        "rejected",
+        "promoted",
+        "proposed",
+        "approved",
+        "filled",
+        "skipped",
+        "expired",
+    )
+
+    assert models.SHADOW_SIGNAL_STATUS_SHADOW == "shadow"
+    assert models.SHADOW_SIGNAL_STATUS_VALIDATED == "validated"
+    assert models.SHADOW_SIGNAL_STATUS_REJECTED == "rejected"
+    assert models.SHADOW_SIGNAL_STATUS_PROMOTED == "promoted"
+    assert models.SHADOW_SIGNAL_STATUS_EXPIRED == "expired"
+    assert models.SHADOW_SIGNAL_STATUSES == (
+        "shadow",
+        "validated",
+        "rejected",
+        "promoted",
+        "expired",
+    )
+
+    assert models.PROMOTION_DECISION_WATCH == "watch"
+    assert models.PROMOTION_DECISION_PROMOTE == "promote"
+    assert models.PROMOTION_DECISION_REJECT == "reject"
+    assert models.PROMOTION_DECISIONS == ("watch", "promote", "reject")
+
+    assert models.PRIMARY_REASON_LATE_INFORMATION == "late_information"
+    assert models.PRIMARY_REASON_LOW_LIQUIDITY == "low_liquidity"
+    assert models.PRIMARY_REASON_WIDE_SPREAD == "wide_spread"
+    assert models.PRIMARY_REASON_UNCLEAR_RESOLUTION == "unclear_resolution"
+    assert models.PRIMARY_REASON_INSUFFICIENT_EDGE == "insufficient_edge"
+    assert models.PRIMARY_REASON_CRITIC_BLOCKER == "critic_blocker"
+    assert models.PRIMARY_REASON_FAILED_VALIDATION == "failed_validation"
+    assert models.PRIMARY_REASON_MISSING_MARKET_SNAPSHOT == "missing_market_snapshot"
+    assert models.PRIMARY_REASON_CAPACITY_TOO_SMALL == "capacity_too_small"
+    assert models.PRIMARY_REASON_APPROVAL_LATENCY_RISK == "approval_latency_risk"
+    assert models.PRIMARY_REASON_CODES == (
+        "late_information",
+        "low_liquidity",
+        "wide_spread",
+        "unclear_resolution",
+        "insufficient_edge",
+        "critic_blocker",
+        "failed_validation",
+        "missing_market_snapshot",
+        "capacity_too_small",
+        "approval_latency_risk",
+    )
+
+
+def test_unknown_transition_event_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown opportunity transition event"):
+        apply_opportunity_transition("not_a_poly_alpha_event")
+
+
 @pytest.mark.parametrize(
     ("event", "opportunity_status", "shadow_signal_status", "promotion_decision"),
     [
         ("scanner_ignore", None, None, None),
+        ("opportunity_ignored", "ignored", None, None),
         ("opportunity_discovered", "watch", None, None),
         ("exploration_pass", "watch", None, None),
         ("exploration_watch", "watch", None, None),
