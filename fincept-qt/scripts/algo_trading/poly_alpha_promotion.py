@@ -244,43 +244,54 @@ def record_proposal_decision(
     if status not in {"approved", "rejected"}:
         raise ValueError("Proposal decision must be approved or rejected")
     bridge = _proposal_bridge(conn, proposal_id)
-    updated = update_trade_proposal_status(
-        conn,
-        proposal_id,
-        status,
-        decided_by,
-        decided_at,
-        decision_reason,
-        deployment_id=bridge["deployment_id"],
-        expected_status="proposed",
-    )
-    if not updated:
-        return False
-    update_opportunity_status(
-        conn,
-        opportunity_id=bridge["opportunity_id"],
-        lifecycle_event=f"proposal_{status}",
-        primary_reason=decision_reason if status == "rejected" else None,
-        updated_at=decided_at,
-        expected_status="proposed",
-        write_audit=True,
-    )
-    record_audit_event(
-        conn,
-        bridge["deployment_id"],
-        bridge["strategy_id"],
-        "user",
-        decided_by,
-        f"proposal_{status}",
-        "proposal",
-        proposal_id,
-        {"status": "proposed"},
-        {"status": status},
-        "success",
-        decision_reason,
-        "",
-        decided_at,
-    )
+    conn.execute("SAVEPOINT poly_alpha_promotion_bridge")
+    try:
+        updated = update_trade_proposal_status(
+            conn,
+            proposal_id,
+            status,
+            decided_by,
+            decided_at,
+            decision_reason,
+            deployment_id=bridge["deployment_id"],
+            expected_status="proposed",
+        )
+        if not updated:
+            conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+            return False
+        lifecycle_event = f"proposal_{status}"
+        updated = update_opportunity_status(
+            conn,
+            opportunity_id=bridge["opportunity_id"],
+            lifecycle_event=lifecycle_event,
+            primary_reason=decision_reason if status == "rejected" else None,
+            updated_at=decided_at,
+            expected_status="proposed",
+            write_audit=True,
+        )
+        if not updated:
+            raise ValueError(f"{lifecycle_event} opportunity lineage update failed")
+        record_audit_event(
+            conn,
+            bridge["deployment_id"],
+            bridge["strategy_id"],
+            "user",
+            decided_by,
+            lifecycle_event,
+            "proposal",
+            proposal_id,
+            {"status": "proposed"},
+            {"status": status},
+            "success",
+            decision_reason,
+            "",
+            decided_at,
+        )
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT poly_alpha_promotion_bridge")
+        conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+        raise
+    conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
     return True
 
 
@@ -371,7 +382,7 @@ def _gate_decision(
     metrics: dict,
 ) -> tuple[str, str]:
     for row in validations:
-        if row["validation_type"] == "event_time" and row["failure_reason"] == "late_information":
+        if row["failure_reason"] == "late_information":
             return "reject", "late_information"
     if critic_blockers:
         return "reject", "critic_blocker"

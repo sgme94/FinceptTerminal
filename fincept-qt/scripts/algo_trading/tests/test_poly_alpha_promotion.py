@@ -390,6 +390,25 @@ def test_promotion_gate_rejects_blocking_validation_and_agent_findings():
     assert decision["critic_blockers"] == [{"reason": "data_leak", "resolved": False}]
 
 
+def test_promotion_gate_rejects_late_information_from_any_validation_type():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    conn.execute(
+        """
+        UPDATE poly_alpha_validation_results
+        SET failure_reason = 'late_information'
+        WHERE shadow_signal_id = 'shadow-promo'
+          AND validation_type = 'fixed_horizon'
+        """
+    )
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "late_information"
+
+
 def test_promotion_lifecycle_watch_reject_promote_updates_opportunity_and_shadow():
     for decision, expected_status in [
         ("watch", "validated"),
@@ -492,6 +511,34 @@ def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit
     assert list_opportunities(conn)[0]["primary_reason"] == "approval_latency_risk"
     assert "paper_fill_skipped" in [row["action"] for row in list_poly_alpha_audit_events(conn)]
     assert list_trade_proposals(conn, "dep-1")[0]["fill_trade_id"] == ""
+
+
+def test_proposal_decision_rolls_back_when_opportunity_lineage_update_fails():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = 'rejected'
+        WHERE opportunity_id = 'opp-promo'
+        """
+    )
+
+    with pytest.raises(ValueError, match="proposal_approved"):
+        record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    poly_alpha_actions = [row["action"] for row in list_poly_alpha_audit_events(conn)]
+    polymarket_actions = [row["action"] for row in list_audit_events(conn, "dep-1")]
+    assert proposal["status"] == "proposed"
+    assert proposal["decided_by"] == ""
+    assert proposal["decided_at"] == ""
+    assert proposal["decision_reason"] == ""
+    assert list_opportunities(conn)[0]["status"] == "rejected"
+    assert "proposal_approved" not in poly_alpha_actions
+    assert "proposal_approved" not in polymarket_actions
 
 
 def test_post_approval_skip_requires_approved_proposal():
