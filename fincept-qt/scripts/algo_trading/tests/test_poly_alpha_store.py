@@ -9,6 +9,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import poly_alpha_store as store
 from poly_alpha_store import (
     audit_action_for_lifecycle_event,
     ensure_poly_alpha_schema,
@@ -84,6 +85,91 @@ def test_ensure_poly_alpha_schema_creates_phase_1_tables(tmp_path):
     assert "poly_alpha_shadow_signals" in names
     assert "poly_alpha_validation_results" in names
     assert "poly_alpha_promotion_decisions" in names
+
+
+def test_version_list_helpers_return_api_rows_with_decoded_json():
+    conn = _conn()
+
+    record_config_version(
+        conn,
+        config_version_id="cfg-v1",
+        name="phase-1-defaults",
+        validation_freshness_window_sec=300,
+        min_exploration_samples=10,
+        min_promotion_samples=30,
+        min_promotion_history_days=90,
+        max_drawdown_threshold=-0.20,
+        min_hit_rate=0.52,
+        min_payoff_ratio=1.10,
+        min_capacity_multiple=2.0,
+        promotion_defaults={"paper_only": True},
+        created_at=NOW,
+        is_active=True,
+    )
+    record_source_set(
+        conn,
+        source_set_version="sources-v1",
+        name="phase-1-sources",
+        enabled_sources=["polymarket_gamma", "official_rss"],
+        trust_policy={"official": "required"},
+        created_at=NOW,
+        is_active=True,
+    )
+    record_strategy_version(
+        conn,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        strategy_name="probability-lag",
+        version="1",
+        config_version_id="cfg-v1",
+        prompt_version="prompt-v1",
+        source_set_version="sources-v1",
+        description="phase 1",
+        created_at=NOW,
+        is_active=True,
+    )
+
+    assert store.list_config_versions(conn) == [
+        {
+            "config_version_id": "cfg-v1",
+            "name": "phase-1-defaults",
+            "validation_freshness_window_sec": 300,
+            "min_exploration_samples": 10,
+            "min_promotion_samples": 30,
+            "min_promotion_history_days": 90,
+            "max_drawdown_threshold": -0.20,
+            "min_hit_rate": 0.52,
+            "min_payoff_ratio": 1.10,
+            "min_capacity_multiple": 2.0,
+            "created_at": NOW,
+            "is_active": 1,
+            "promotion_defaults": {"paper_only": True},
+        }
+    ]
+    assert store.list_source_sets(conn) == [
+        {
+            "source_set_version": "sources-v1",
+            "name": "phase-1-sources",
+            "created_at": NOW,
+            "is_active": 1,
+            "enabled_sources": ["polymarket_gamma", "official_rss"],
+            "trust_policy": {"official": "required"},
+        }
+    ]
+    assert store.list_strategy_versions(conn) == [
+        {
+            "strategy_version_id": "strat-v1",
+            "strategy_family": "cross_market_probability",
+            "strategy_name": "probability-lag",
+            "version": "1",
+            "config_version_id": "cfg-v1",
+            "prompt_version": "prompt-v1",
+            "source_set_version": "sources-v1",
+            "description": "phase 1",
+            "created_at": NOW,
+            "is_active": 1,
+        }
+    ]
 
 
 def test_scan_runs_persist_no_trade_attribution_and_creation_audit():

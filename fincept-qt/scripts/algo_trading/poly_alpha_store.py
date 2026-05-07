@@ -1578,6 +1578,63 @@ def audit_action_for_lifecycle_event(event: str) -> str:
         raise ValueError(f"Unknown lifecycle event: {event}") from exc
 
 
+def list_config_versions(conn: sqlite3.Connection) -> list[dict]:
+    rows = _select_dicts(
+        conn,
+        """
+        SELECT config_version_id, name, validation_freshness_window_sec,
+               min_exploration_samples, min_promotion_samples,
+               min_promotion_history_days, max_drawdown_threshold, min_hit_rate,
+               min_payoff_ratio, min_capacity_multiple, created_at, is_active,
+               promotion_defaults_json
+        FROM poly_alpha_config_versions
+        ORDER BY id
+        """,
+    )
+    return [
+        _decode_json_fields(
+            row,
+            [("promotion_defaults_json", "promotion_defaults", {})],
+        )
+        for row in rows
+    ]
+
+
+def list_source_sets(conn: sqlite3.Connection) -> list[dict]:
+    rows = _select_dicts(
+        conn,
+        """
+        SELECT source_set_version, name, created_at, is_active,
+               enabled_sources_json, trust_policy_json
+        FROM poly_alpha_source_sets
+        ORDER BY id
+        """,
+    )
+    return [
+        _decode_json_fields(
+            row,
+            [
+                ("enabled_sources_json", "enabled_sources", []),
+                ("trust_policy_json", "trust_policy", {}),
+            ],
+        )
+        for row in rows
+    ]
+
+
+def list_strategy_versions(conn: sqlite3.Connection) -> list[dict]:
+    return _select_dicts(
+        conn,
+        """
+        SELECT strategy_version_id, strategy_family, strategy_name, version,
+               config_version_id, prompt_version, source_set_version, description,
+               created_at, is_active
+        FROM poly_alpha_strategy_versions
+        ORDER BY id
+        """,
+    )
+
+
 def list_scan_runs(conn: sqlite3.Connection) -> list[dict]:
     return _select_dicts(
         conn,
