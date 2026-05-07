@@ -13,7 +13,8 @@ Phase 1 is intentionally narrower:
 - Market venue: Polymarket.
 - Event category: crypto/financial events.
 - Trading mode: paper only.
-- Validation style: shadow-first alpha research, signal-level validation, promotion gate, manual approval, and paper fills.
+- Product model: opportunity lifecycle first, not pipeline/dashboard first.
+- Validation style: deterministic opportunity discovery, evidence pack, agent review, shadow-first validation, promotion gate, manual approval, and paper fills.
 - Product entry: reuse the existing Fincept-style Web Terminal pages instead of adding a new primary route.
 
 The Phase 1 goal is to prove that the platform can rapidly discover, validate, reject, promote, and audit alpha hypotheses. It does not promise that the first implemented strategy will be profitable.
@@ -50,25 +51,26 @@ Existing non-negotiable constraints remain in force:
 - Data sources: Polymarket official data, BTC/ETH/OHLCV or market price data, news/RSS, official announcements, regulatory, ETF, and exchange announcements.
 - Social media/search trends are deferred from the Phase 1 core evidence chain.
 - Alpha hypothesis families:
-  - event reaction lag
-  - cross-market probability divergence
-  - resolution/rules understanding
+  - cross-market probability divergence as the Phase 1 primary execution path
+  - event reaction lag as auxiliary evidence and a later validation path
+  - resolution/rules understanding as auxiliary evidence and a later validation path
 - Product integration: reuse existing F1-F8 pages.
 - Agent-to-proposal rule: allow agent-generated proposals only after shadow signal, promotion gate, risk gate, and manual approval.
-- Validation model: layered validation, with signal-level validation required in Phase 1 and event-level/market-level replay reserved for later.
+- Validation model: signal-level validation plus a lightweight event-time check required in Phase 1; full event-level and market-level replay are reserved for later.
 - Exit testing: multiple exit templates, reported separately.
+- Strategy tracking: every research run, shadow signal, validation result, and promotion decision must carry strategy/config/prompt/source-set version identifiers.
 
 ## North Star and Phase 1 Boundary
 
-Poly Alpha should optimize the alpha research loop:
+Poly Alpha should optimize the opportunity lifecycle:
 
 ```text
-discover event
-  -> generate alpha hypothesis
-  -> gather evidence and counter-evidence
+discover opportunity
+  -> build evidence pack
+  -> run agent review
   -> create structured thesis
   -> shadow signal
-  -> validate
+  -> validate prediction quality and trading quality
   -> reject / watch / promote
   -> paper proposal
   -> manual approval
@@ -76,19 +78,28 @@ discover event
   -> attribution
 ```
 
-The platform is successful when it can quickly falsify weak ideas and promote only those with enough evidence, validation, and risk clearance.
+The platform is successful when it can quickly answer the user's daily trading questions:
+
+- What opportunities exist now?
+- Which opportunities are worth research?
+- Which opportunities were rejected, and why?
+- Which shadow signals are improving or decaying?
+- Which signals are ready for paper proposal?
+- Which alpha family, strategy version, data source set, and prompt version produced the result?
+
+The system should promote only opportunities with enough evidence, validation, risk clearance, and user approval.
 
 Phase 1 must not turn agents into direct trading authorities. Agents may recommend actions and create structured candidates, but the platform decides promotion through explicit gates, and the user retains manual approval before paper fills.
 
 ## Architecture
 
-Phase 1 adds a research pipeline that produces auditable artifacts and then connects to the existing paper proposal flow.
+Phase 1 adds an opportunity lifecycle that produces auditable artifacts and then connects to the existing paper proposal flow. Deterministic scanners create opportunities and evidence packs before any agent analysis runs.
 
 ```mermaid
 flowchart TD
-  Info["Information Acquisition Layer"]
-  Link["Event & Market Linking Layer"]
-  Agents["Agent Research Layer"]
+  Scan["Deterministic Opportunity Discovery"]
+  Evidence["Evidence Pack Builder"]
+  Agents["Agent Review Layer"]
   Thesis["Alpha Thesis / Shadow Signal Store"]
   Validation["Signal-Level Validation Engine"]
   Promotion["Promotion Gate"]
@@ -97,8 +108,8 @@ flowchart TD
   Fill["Existing Paper Fill"]
   Audit["Audit / Attribution"]
 
-  Info --> Link
-  Link --> Agents
+  Scan --> Evidence
+  Evidence --> Agents
   Agents --> Thesis
   Thesis --> Validation
   Validation --> Promotion
@@ -106,15 +117,47 @@ flowchart TD
   Proposal --> Approval
   Approval --> Fill
   Fill --> Audit
-  Info --> Audit
+  Scan --> Audit
+  Evidence --> Audit
   Agents --> Audit
   Validation --> Audit
   Promotion --> Audit
 ```
 
-### Information Acquisition Layer
+### Opportunity Lifecycle States
 
-This layer fetches and normalizes information. It does not create signals or decide trades.
+Opportunity status is the user's top-level view of an idea. Shadow signal status is a lower-level trading-signal state. Promotion decision is a gate result. These enums must stay separate in APIs and UI filters.
+
+Opportunity statuses:
+
+- `ignored`: discovered but intentionally not researched.
+- `watch`: worth watching, not yet a shadow signal.
+- `shadow`: has at least one active shadow signal.
+- `validated`: has validation results but is not promoted.
+- `rejected`: failed a gate or has a blocking reason.
+- `promoted`: passed Promotion Gate.
+- `proposed`: created a paper proposal.
+- `approved`: proposal was manually approved.
+- `filled`: paper fill was recorded.
+- `expired`: opportunity, shadow signal, or proposal is no longer actionable.
+
+Shadow signal statuses:
+
+- `shadow`
+- `validated`
+- `rejected`
+- `promoted`
+- `expired`
+
+Promotion decisions:
+
+- `watch`
+- `promote`
+- `reject`
+
+### Deterministic Opportunity Discovery
+
+This layer fetches, normalizes, and scans information. It may create opportunity candidates, but it must not create trade proposals or decide trades.
 
 Phase 1 source categories:
 
@@ -139,11 +182,20 @@ Every ingested document must persist source metadata:
 - raw payload where practical
 - trust level
 
-Agents may only cite ingested document IDs. They must not use uncited web claims as trade evidence.
+Agents may only cite ingested document IDs and opportunity evidence packs. They must not use uncited web claims as trade evidence.
 
-### Event and Market Linking Layer
+Phase 1 primary opportunity family:
 
-This layer connects ingested documents and event candidates to Polymarket markets and token IDs.
+- `cross_market_probability`: compares Polymarket market probability against external crypto/financial market context such as BTC/ETH spot, futures, volatility, macro calendar, ETF/regulatory/exchange events, and price path conditions.
+
+Phase 1 supported but secondary families:
+
+- `event_lag`: records whether an information event may have moved Polymarket after a delay. It can produce research reports and shadow signals, but full event-level validation is deferred.
+- `resolution_rules`: records market title versus resolution criteria ambiguity. It can block promotion or support a thesis, but full standalone rules-alpha validation is deferred.
+
+### Evidence Pack and Event-Market Linking
+
+This layer connects ingested documents, market snapshots, event candidates, and Polymarket contracts into one immutable evidence pack. Agents review the evidence pack; they do not freely fetch facts during decision-making.
 
 Examples:
 
@@ -152,27 +204,36 @@ Examples:
 - Fed/inflation news -> crypto macro markets.
 - exchange announcement -> exchange or asset event markets.
 
-The output is an event-market link with:
+The output is an opportunity and evidence pack with:
 
+- opportunity ID
 - event ID
-- market ID
-- condition ID
-- asset ID
+- venue
+- venue market ID
+- venue contract ID
+- outcome ID
 - outcome
 - link reason
 - link confidence
+- cited document IDs
+- cited snapshot IDs
+- source-set version
 
 ### Agent Research Layer
 
 Phase 1 uses a minimal fixed expert structure:
 
-- **Researcher**: builds the alpha thesis from ingested evidence.
-- **Critic**: searches for counter-evidence, timestamp issues, prior pricing, and resolution ambiguity.
+- **Researcher**: builds the alpha thesis from the evidence pack.
+- **Critic**: searches for counter-evidence, timestamp issues, prior pricing, and resolution ambiguity inside the evidence pack.
 - **Risk Reviewer**: checks liquidity, spread, order book freshness, risk limits, and promotion eligibility.
+
+Agents are research accelerators and explainers, not the primary source of alpha. The platform must first produce deterministic opportunity candidates and evidence packs. Agent output is invalid if it cites facts outside the persisted evidence pack.
 
 The agent output must be structured:
 
 ```text
+opportunity_id
+strategy_version_id
 estimated_probability
 market_probability
 edge
@@ -202,6 +263,19 @@ A shadow signal can later be:
 
 `shadow` is the initial persisted state. The F3 Signals filter must use the same `shadow` value, not a UI-only alias such as `active`.
 
+No-trade and rejection outcomes must be first-class records, not discarded scans. Required reason codes:
+
+- `late_information`
+- `low_liquidity`
+- `wide_spread`
+- `unclear_resolution`
+- `insufficient_edge`
+- `critic_blocker`
+- `failed_validation`
+- `missing_market_snapshot`
+- `capacity_too_small`
+- `approval_latency_risk`
+
 ### Signal-Level Validation Engine
 
 Phase 1 must implement signal-level validation.
@@ -216,6 +290,15 @@ Phase 1 validation data sources:
 - External BTC/ETH/OHLCV context should come from ingested price-market documents with `observed_at` timestamps.
 
 The Phase 1 default validation freshness window is `300` seconds. This value must live in the same versioned Poly Alpha configuration object as the Promotion Gate defaults, and tests should assert it.
+
+Phase 1 must also implement a lightweight event-time check. It does not need full event-level backtesting, but every validation result must compute:
+
+- `information_lag_sec`: signal creation time minus the latest cited document `published_at` or `observed_at`.
+- `fetch_lag_sec`: signal creation time minus the latest cited document `fetched_at`.
+- `market_move_before_signal`: Polymarket probability move between the relevant event/document time and signal creation.
+- `market_move_after_signal`: Polymarket probability move after signal creation for the selected validation horizon.
+
+If most of the move occurred before the signal, the signal may still be recorded but should fail promotion with `late_information` unless another thesis justifies the entry.
 
 Phase 1 exit templates:
 
@@ -240,9 +323,14 @@ Promotion gate defaults:
 
 - at least 30 historical signals or 90 days of historical coverage
 - cost-adjusted net return greater than zero
+- positive median closing-line value after costs
+- Brier score and calibration error recorded for resolved markets where outcomes are known
+- edge decay recorded for unresolved markets
 - maximum drawdown no worse than `-20%`
 - hit rate at least `52%` unless payoff ratio is at least `1.5`
 - payoff ratio at least `1.1` unless hit rate is at least `60%`
+- capacity at quoted price at least `2x` the configured paper order size
+- approval latency impact recorded for promoted proposals
 - no obvious lookahead bias or survivorship bias
 - no unresolved Critic blocker
 - Risk Reviewer approval
@@ -254,6 +342,11 @@ Promotion outcomes:
 - `promote`
 - `reject`
 - `watch`
+
+Promotion should evaluate two metric groups separately:
+
+- Prediction quality: calibration error, Brier score where resolved, closing-line value, edge decay, event outcome accuracy where available, and resolution risk rate.
+- Trading quality: cost-adjusted return, drawdown, hit rate/payoff ratio, capacity, slippage, spread, and approval latency impact.
 
 ### Existing Paper Proposal Flow
 
@@ -274,6 +367,163 @@ Approval must not submit any real CLOB order.
 
 Phase 1 should add Poly Alpha research tables rather than overloading paper trade/proposal tables.
 
+The data model should use multi-market identifiers even though Phase 1 only implements the Polymarket adapter. Polymarket-specific values such as `condition_id` and `asset_id` belong in adapter metadata or dedicated nullable columns, while core joins should use generic venue fields.
+
+### `poly_alpha_config_versions`
+
+Stores deterministic defaults for validation and promotion.
+
+Required fields:
+
+```text
+config_version_id
+name
+validation_freshness_window_sec
+min_promotion_samples
+min_promotion_history_days
+max_drawdown_threshold
+min_hit_rate
+min_payoff_ratio
+min_capacity_multiple
+promotion_defaults_json
+created_at
+is_active
+```
+
+Phase 1 default values:
+
+- `validation_freshness_window_sec = 300`
+- `min_promotion_samples = 30`
+- `min_promotion_history_days = 90`
+- `max_drawdown_threshold = -0.20`
+- `min_hit_rate = 0.52`
+- `min_payoff_ratio = 1.10`
+- `min_capacity_multiple = 2.0`
+
+### `poly_alpha_strategy_versions`
+
+Stores the versioned research logic that produced a signal.
+
+Required fields:
+
+```text
+strategy_version_id
+strategy_family
+strategy_name
+version
+config_version_id
+prompt_version
+source_set_version
+description
+created_at
+is_active
+```
+
+Strategy family values:
+
+- `cross_market_probability`
+- `event_lag`
+- `resolution_rules`
+
+Phase 1 implementation should make `cross_market_probability` the primary execution path. The other families may produce evidence and shadow signals, but they should not be required to pass full promotion until their validation paths are implemented.
+
+### `poly_alpha_source_sets`
+
+Stores the versioned set of enabled data sources for a strategy run.
+
+Required fields:
+
+```text
+source_set_version
+name
+enabled_sources_json
+trust_policy_json
+created_at
+is_active
+```
+
+Phase 1 default source set:
+
+- Polymarket Gamma/CLOB/Data API
+- BTC/ETH/OHLCV price source
+- news/RSS
+- official announcements
+- regulatory, ETF, and exchange announcements
+
+### `poly_alpha_opportunities`
+
+Stores the user's opportunity lifecycle object.
+
+Required fields:
+
+```text
+opportunity_id
+strategy_version_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
+title
+alpha_family
+status
+primary_reason
+market_probability
+estimated_probability
+edge
+confidence
+created_at
+updated_at
+```
+
+Opportunity statuses:
+
+- `ignored`
+- `watch`
+- `shadow`
+- `validated`
+- `rejected`
+- `promoted`
+- `proposed`
+- `approved`
+- `filled`
+- `expired`
+
+Primary reason codes:
+
+- `late_information`
+- `low_liquidity`
+- `wide_spread`
+- `unclear_resolution`
+- `insufficient_edge`
+- `critic_blocker`
+- `failed_validation`
+- `missing_market_snapshot`
+- `capacity_too_small`
+- `approval_latency_risk`
+
+### `poly_alpha_evidence_packs`
+
+Stores the immutable evidence set that agents are allowed to analyze.
+
+Required fields:
+
+```text
+evidence_pack_id
+opportunity_id
+strategy_version_id
+document_ids_json
+snapshot_ids_json
+event_ids_json
+source_set_version
+latest_published_at
+latest_fetched_at
+latest_observed_at
+created_at
+payload_hash
+```
+
+Agents must cite an evidence pack. Agent findings that reference uncaptured facts are invalid.
+
 ### `poly_alpha_documents`
 
 Stores ingested evidence.
@@ -287,6 +537,10 @@ source_name
 url
 api_endpoint
 market_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
 asset_symbol
 topic
 published_at
@@ -343,9 +597,11 @@ Required fields:
 ```text
 link_id
 event_id
-market_id
-condition_id
-asset_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
+adapter_metadata_json
 outcome
 link_reason
 link_confidence
@@ -361,8 +617,12 @@ Required fields:
 ```text
 run_id
 trigger_type
+opportunity_id
+evidence_pack_id
+strategy_version_id
 event_id
-market_id
+venue
+venue_market_id
 requested_by
 started_at
 completed_at
@@ -385,6 +645,9 @@ Required fields:
 ```text
 finding_id
 run_id
+opportunity_id
+evidence_pack_id
+strategy_version_id
 agent_role
 estimated_probability
 market_probability
@@ -407,11 +670,15 @@ Required fields:
 
 ```text
 shadow_signal_id
+opportunity_id
 run_id
+strategy_version_id
 strategy_family
-market_id
-condition_id
-asset_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
+adapter_metadata_json
 side
 observed_price
 estimated_probability
@@ -446,9 +713,11 @@ Required fields:
 
 ```text
 snapshot_id
-market_id
-condition_id
-asset_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
+adapter_metadata_json
 source_api
 observed_at
 fetched_at
@@ -476,7 +745,9 @@ Required fields:
 
 ```text
 validation_id
+opportunity_id
 shadow_signal_id
+strategy_version_id
 entry_snapshot_id
 exit_snapshot_id
 validation_type
@@ -485,6 +756,14 @@ exit_price
 holding_period
 gross_return
 cost_adjusted_return
+closing_line_value
+brier_score
+calibration_error
+edge_decay
+information_lag_sec
+fetch_lag_sec
+market_move_before_signal
+market_move_after_signal
 max_adverse_excursion
 max_favorable_excursion
 liquidity_assumption
@@ -508,9 +787,13 @@ Required fields:
 
 ```text
 promotion_id
+opportunity_id
 shadow_signal_id
+strategy_version_id
 decision
 reason
+prediction_metrics_json
+trading_metrics_json
 metrics_json
 critic_blockers_json
 risk_checks_json
@@ -530,12 +813,18 @@ Poly Alpha actions must be visible in F8 Audit, either by writing to `algo_polym
 
 Required audit actions:
 
+- `config_version_created`
+- `strategy_version_created`
+- `opportunity_discovered`
 - `document_ingested`
+- `evidence_pack_created`
 - `event_linked`
 - `research_started`
 - `research_completed`
 - `shadow_signal_created`
 - `validation_completed`
+- `opportunity_rejected`
+- `opportunity_watch`
 - `promotion_approved`
 - `promotion_rejected`
 - `promotion_watch`
@@ -546,6 +835,9 @@ Required audit actions:
 
 A promoted proposal should be traceable back to:
 
+- strategy version
+- opportunity
+- evidence pack
 - source documents
 - event candidate
 - market link
@@ -559,7 +851,17 @@ A promoted proposal should be traceable back to:
 
 ## Web Terminal Mapping
 
-Phase 1 reuses the existing page model.
+Phase 1 reuses the existing F1-F8 page model and does not add a competing primary route. However, the user-facing daily workflow needs a single cockpit. F7 Agents should therefore become the default **Poly Alpha Cockpit** surface while still containing the underlying agent task tools.
+
+The cockpit answers:
+
+- What opportunities exist now?
+- Which opportunities need research?
+- Which shadow signals are improving or decaying?
+- Which signals are ready for promotion?
+- Which proposals are ready for Risk queue review?
+- What failed, and why?
+- Which strategy version produced the result?
 
 ### F2 Markets
 
@@ -592,13 +894,18 @@ Displays:
 
 - alpha thesis
 - strategy family
+- strategy version
 - shadow signal status
+- opportunity status
 - estimated probability
 - market probability
 - edge
 - confidence
 - validation gate status
 - promotion result
+- closing-line value
+- calibration/Brier metrics where available
+- primary no-trade or rejection reason
 
 Filters are split by type.
 
@@ -637,7 +944,7 @@ Risk queue must only show promoted proposals, not raw shadow signals.
 
 Purpose:
 
-- information acquisition and event flow.
+- information acquisition, evidence packs, and event flow.
 
 Displays:
 
@@ -647,6 +954,8 @@ Displays:
 - payload hash
 - linked markets
 - event candidates
+- evidence packs
+- opportunity links
 
 Actions:
 
@@ -654,16 +963,22 @@ Actions:
 - open source
 - send event to agents
 
-### F7 Agents
+### F7 Agents / Poly Alpha Cockpit
 
 Purpose:
 
-- manual research task entry and agent output review.
+- daily Poly Alpha cockpit plus manual research task entry and agent output review.
 
 Supports:
 
 - scheduled scan review
 - manual research task
+- opportunity queue
+- evidence pack review
+- shadow signal performance
+- promotion readiness
+- paper proposal readiness
+- no-trade and rejection reason review
 
 Manual task input may include:
 
@@ -674,6 +989,12 @@ Manual task input may include:
 
 Output groups:
 
+- Today's opportunities
+- Needs research
+- Shadow performance
+- Ready for promotion
+- Risk queue candidates
+- Failed and why
 - Researcher finding
 - Critic finding
 - Risk Reviewer finding
@@ -693,6 +1014,11 @@ The Web app should continue to call API endpoints rather than Python runner inte
 
 Suggested API groups:
 
+- `/api/poly-alpha/config-versions`
+- `/api/poly-alpha/source-sets`
+- `/api/poly-alpha/strategy-versions`
+- `/api/poly-alpha/opportunities`
+- `/api/poly-alpha/evidence-packs`
 - `/api/poly-alpha/documents`
 - `/api/poly-alpha/events`
 - `/api/poly-alpha/links`
@@ -704,8 +1030,9 @@ Suggested API groups:
 
 Control endpoints must be paper-safe:
 
-- trigger scheduled scan
+- trigger deterministic scheduled scan
 - trigger manual research task
+- build evidence pack
 - run signal validation
 - decide promotion
 - create paper proposal from promoted signal
@@ -718,13 +1045,22 @@ No endpoint may accept private keys, API secrets, or live order parameters.
 
 Required coverage:
 
+- versioned config defaults are deterministic
+- source set versions attach to evidence packs and strategy versions
+- strategy version IDs attach to research runs, signals, validations, and promotions
+- opportunity lifecycle supports ignored/watch/shadow/validated/rejected/promoted/proposed/approved/filled/expired
 - document ingestion deduplicates by payload hash
 - timestamp semantics preserve `published_at`, `fetched_at`, and `observed_at`
-- agent findings require cited document IDs
+- evidence packs include cited documents and snapshots
+- agent findings require cited evidence pack IDs
 - event-market links persist link confidence and reason
 - shadow signal lifecycle
+- no-trade and rejection reason codes persist
+- event-time check computes information lag and pre/post signal market moves
 - validation templates produce separate results
+- validation records CLV, Brier/calibration where available, and edge decay
 - promotion gate supports `promote`, `reject`, and `watch`
+- promotion gate evaluates prediction quality and trading quality separately
 - proposal creation only happens after promotion
 - shadow signals do not appear in the Risk queue
 - paper-only boundaries reject live trading fields
@@ -734,7 +1070,9 @@ Required coverage:
 
 Required coverage:
 
+- F7 Cockpit displays opportunity queue, shadow performance, promotion readiness, failed reasons, and Risk queue candidates
 - F2/F3/F5/F7/F8 display Poly Alpha state
+- F3 separates shadow signal status filters from promotion decision filters
 - F4 Risk only displays promoted proposals
 - evidence chain links are visible
 - F1-F8 remain full-page global routes
@@ -746,8 +1084,11 @@ Required happy path:
 
 ```text
 manual research task
+  -> opportunity
+  -> evidence pack
   -> mocked agent findings
   -> shadow signal
+  -> event-time check
   -> validation
   -> promotion
   -> Risk queue proposal
@@ -759,7 +1100,7 @@ manual research task
 Required negative path:
 
 ```text
-shadow signal with unresolved Critic blocker
+opportunity with unresolved Critic blocker
   -> validation/review
   -> promotion rejected
   -> no Risk queue proposal
@@ -774,7 +1115,7 @@ Validation must use the shadow signal creation time as the reference point. Data
 
 ### Agent Hallucination
 
-Agents can summarize and reason, but they cannot create facts. Structured findings must cite persisted document IDs.
+Agents can summarize and reason, but they cannot create facts. Structured findings must cite persisted evidence pack IDs and document IDs.
 
 ### Low-Liquidity False Profit
 
@@ -783,6 +1124,10 @@ Validation must account for spread, slippage, top-of-book depth, and capacity. A
 ### Proposal Noise
 
 All ideas start in shadow mode. Only promoted signals enter F4 Risk.
+
+### Missing No-Trade Attribution
+
+No-trade outcomes are useful research data. Scans and research runs that do not create shadow signals must still record a primary reason code where practical.
 
 ### Resolution Ambiguity
 
