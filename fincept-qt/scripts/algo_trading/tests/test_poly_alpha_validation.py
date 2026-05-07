@@ -285,11 +285,11 @@ def test_event_time_metrics_detect_late_information_from_cited_documents():
         conn,
         "snap-entry",
         "2026-05-07T11:59:30Z",
-        0.50,
+        0.55,
         fetched_at="2026-05-07T11:59:35Z",
     )
     _insert_snapshot(conn, "snap-before-info", "2026-05-07T11:44:00Z", 0.40)
-    _insert_snapshot(conn, "snap-at-info", "2026-05-07T11:45:00Z", 0.55)
+    _insert_snapshot(conn, "snap-at-info", "2026-05-07T11:45:00Z", 0.40)
     _insert_snapshot(conn, "snap-after-signal", "2026-05-07T12:05:00Z", 0.57)
     document_id = _insert_document(
         conn,
@@ -315,6 +315,41 @@ def test_event_time_metrics_detect_late_information_from_cited_documents():
     assert metrics["failure_reason"] == "late_information"
 
 
+def test_event_time_metrics_anchor_moves_at_signal_entry_snapshot():
+    conn = _conn()
+    _seed_shadow_signal(conn)
+    entry_id = _insert_snapshot(
+        conn,
+        "snap-entry",
+        "2026-05-07T11:59:30Z",
+        0.55,
+        fetched_at="2026-05-07T11:59:35Z",
+    )
+    _insert_snapshot(conn, "snap-before-info", "2026-05-07T11:44:00Z", 0.40)
+    _insert_snapshot(conn, "snap-at-info", "2026-05-07T11:45:00Z", 0.40)
+    _insert_snapshot(conn, "snap-after-signal", "2026-05-07T12:05:00Z", 0.56)
+    document_id = _insert_document(
+        conn,
+        "doc-signal-anchor",
+        published_at="2026-05-07T11:45:00Z",
+        fetched_at="2026-05-07T11:58:00Z",
+    )
+
+    metrics = calculate_event_time_metrics(
+        shadow_signal=list_shadow_signals(conn)[0],
+        entry_snapshot=[
+            row for row in list_market_snapshots(conn)
+            if row["snapshot_id"] == entry_id
+        ][0],
+        documents=[row for row in list_documents(conn) if row["document_id"] == document_id],
+        snapshots=list_market_snapshots(conn),
+    )
+
+    assert metrics["market_move_before_signal"] == pytest.approx(0.15)
+    assert metrics["market_move_after_signal"] == pytest.approx(0.01)
+    assert metrics["failure_reason"] == "late_information"
+
+
 def test_validation_records_late_information_on_template_rows():
     conn = _conn()
     shadow_signal_id = _seed_shadow_signal(conn)
@@ -322,11 +357,11 @@ def test_validation_records_late_information_on_template_rows():
         conn,
         "snap-entry",
         "2026-05-07T11:59:30Z",
-        0.50,
+        0.55,
         fetched_at="2026-05-07T11:59:35Z",
     )
     _insert_snapshot(conn, "snap-before-info", "2026-05-07T11:44:00Z", 0.40)
-    _insert_snapshot(conn, "snap-at-info", "2026-05-07T11:45:00Z", 0.55)
+    _insert_snapshot(conn, "snap-at-info", "2026-05-07T11:45:00Z", 0.40)
     _insert_snapshot(conn, "snap-after-signal", "2026-05-07T12:05:00Z", 0.57)
     document_id = _insert_document(
         conn,

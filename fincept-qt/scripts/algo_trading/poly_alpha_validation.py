@@ -132,14 +132,13 @@ def calculate_event_time_metrics(
     if info_at is None:
         return _empty_event_metrics()
 
-    before_info = _latest_snapshot_before(snapshots, info_at, strict=True)
     at_info = _latest_snapshot_before(snapshots, info_at, strict=False)
     after_signal = _earliest_snapshot_after(snapshots, signal_at)
-    price_before_info = _price(before_info)
     price_at_info = _price(at_info)
+    entry_price = _price(entry_snapshot)
     price_after_signal = _price(after_signal)
-    market_move_before_signal = _delta(price_at_info, price_before_info)
-    market_move_after_signal = _delta(price_after_signal, price_at_info)
+    market_move_before_signal = _delta(entry_price, price_at_info)
+    market_move_after_signal = _delta(price_after_signal, entry_price)
 
     failure_reason = ""
     if abs(market_move_before_signal) > abs(market_move_after_signal):
