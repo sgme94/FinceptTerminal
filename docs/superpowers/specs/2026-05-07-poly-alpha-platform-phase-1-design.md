@@ -344,8 +344,10 @@ Exploration gate defaults:
 
 - at least 10 historical events or signal samples
 - complete source, fetched time, and payload hash metadata
-- structured thesis, evidence, and counter-evidence
-- metrics recorded, but profitability not yet required
+- evidence pack includes at least one current market snapshot
+- event-market link confidence is recorded
+- basic market probability, spread, depth, and liquidity metrics are recorded
+- deterministic evidence completeness metrics are recorded, but profitability is not required
 
 Exploration outcomes:
 
@@ -1191,6 +1193,7 @@ Required happy path:
 manual research task
   -> opportunity
   -> evidence pack
+  -> exploration pass
   -> mocked agent findings
   -> shadow signal
   -> event-time check
