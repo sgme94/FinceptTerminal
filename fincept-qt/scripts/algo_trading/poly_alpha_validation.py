@@ -73,16 +73,8 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
         }
 
     documents = _cited_documents(conn, shadow_signal)
-    event_metrics = calculate_event_time_metrics(
-        shadow_signal=shadow_signal,
-        entry_snapshot=entry_snapshot,
-        documents=documents,
-        snapshots=snapshots,
-    )
-    failure_reason = event_metrics.get("failure_reason", "")
-    pass_fail = "fail" if failure_reason else "pass"
-
     validation_ids = []
+    failure_reasons = []
     for validation_type in EXIT_TEMPLATES:
         template_result = calculate_template_result(
             validation_type=validation_type,
@@ -92,6 +84,17 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
             config=config,
             now=now,
         )
+        event_metrics = calculate_event_time_metrics(
+            shadow_signal=shadow_signal,
+            entry_snapshot=entry_snapshot,
+            documents=documents,
+            snapshots=snapshots,
+            exit_snapshot=template_result.get("exit_snapshot"),
+        )
+        failure_reason = event_metrics.get("failure_reason", "")
+        pass_fail = "fail" if failure_reason else "pass"
+        if failure_reason:
+            failure_reasons.append(failure_reason)
         validation_ids.append(
             _record_result(
                 conn,
@@ -108,8 +111,8 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
 
     return {
         "validation_ids": validation_ids,
-        "pass_fail": pass_fail,
-        "failure_reason": failure_reason,
+        "pass_fail": "fail" if failure_reasons else "pass",
+        "failure_reason": failure_reasons[0] if failure_reasons else "",
     }
 
 
@@ -119,6 +122,7 @@ def calculate_event_time_metrics(
     entry_snapshot: dict[str, Any],
     documents: list[dict[str, Any]],
     snapshots: list[dict[str, Any]],
+    exit_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     signal_at = _parse_timestamp(shadow_signal.get("created_at", ""))
     if signal_at is None:
@@ -133,7 +137,7 @@ def calculate_event_time_metrics(
         return _empty_event_metrics()
 
     at_info = _latest_snapshot_before(snapshots, info_at, strict=False)
-    after_signal = _earliest_snapshot_after(snapshots, signal_at)
+    after_signal = exit_snapshot or _earliest_snapshot_after(snapshots, signal_at)
     price_at_info = _price(at_info)
     entry_price = _price(entry_snapshot)
     price_after_signal = _price(after_signal)
@@ -175,6 +179,7 @@ def calculate_template_result(
         snapshots,
         config,
         now,
+        shadow_signal.get("side", ""),
     )
     exit_price = _price(exit_snapshot)
     if exit_price is None:
@@ -200,6 +205,7 @@ def calculate_template_result(
 
     return {
         "entry_price": entry_price,
+        "exit_snapshot": exit_snapshot,
         "exit_snapshot_id": exit_snapshot.get("snapshot_id", "") if exit_snapshot else "",
         "exit_price": exit_price,
         "holding_period": holding_period,
@@ -270,6 +276,7 @@ def _select_exit_snapshot(
     snapshots: list[dict[str, Any]],
     config: dict[str, Any],
     now: str,
+    side: str,
 ) -> dict[str, Any] | None:
     if signal_at is None:
         return None
@@ -286,7 +293,7 @@ def _select_exit_snapshot(
         target_return = config.get("target_return", 0.10)
         stop_return = config.get("stop_return", -0.05)
         for snapshot in sorted(future, key=_snapshot_time_key):
-            gross_return = _gross_return(entry_price, _price(snapshot), "buy")
+            gross_return = _gross_return(entry_price, _price(snapshot), side)
             if gross_return is None:
                 continue
             if gross_return >= target_return or gross_return <= stop_return:

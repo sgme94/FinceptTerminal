@@ -67,7 +67,12 @@ def _seed_versions(conn: sqlite3.Connection) -> None:
     )
 
 
-def _seed_shadow_signal(conn: sqlite3.Connection, *, market_id: str = "market-1") -> str:
+def _seed_shadow_signal(
+    conn: sqlite3.Connection,
+    *,
+    market_id: str = "market-1",
+    side: str = "buy",
+) -> str:
     opportunity_id = record_opportunity(
         conn,
         opportunity_id=f"opp-{market_id}",
@@ -131,7 +136,7 @@ def _seed_shadow_signal(conn: sqlite3.Connection, *, market_id: str = "market-1"
         venue_contract_id=f"contract-{market_id}",
         outcome_id="yes",
         adapter_metadata={},
-        side="buy",
+        side=side,
         observed_price=0.42,
         estimated_probability=0.57,
         edge=0.15,
@@ -450,3 +455,69 @@ def test_validation_records_exit_templates_with_resolved_and_unresolved_metrics(
     assert all(row["brier_score"] is None for row in unresolved)
     assert all(row["calibration_error"] is None for row in unresolved)
     assert all(row["edge_decay"] == pytest.approx(0.02) for row in unresolved)
+
+
+def test_validation_records_market_move_after_signal_per_exit_template():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn)
+    _insert_snapshot(conn, "snap-info", "2026-05-07T11:45:00Z", 0.45)
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.50)
+    _insert_snapshot(conn, "snap-fixed", "2026-05-07T13:00:00Z", 0.52)
+    _insert_snapshot(conn, "snap-target", "2026-05-07T13:30:00Z", 0.60)
+    _insert_snapshot(conn, "snap-resolution", "2026-05-08T00:00:00Z", 0.55)
+    document_id = _insert_document(
+        conn,
+        "doc-row-specific-move",
+        published_at="2026-05-07T11:45:00Z",
+        fetched_at="2026-05-07T11:58:00Z",
+    )
+    conn.execute(
+        "UPDATE poly_alpha_evidence_packs SET document_ids_json = ? WHERE evidence_pack_id = ?",
+        (f'["{document_id}"]', "pack-market-1"),
+    )
+
+    run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config(
+            {
+                "fixed_horizon_sec": 3600,
+                "target_return": 0.19,
+                "stop_return": -0.05,
+                "resolution_at": "2026-05-08T00:00:00Z",
+            }
+        ),
+        NOW,
+    )
+
+    rows = {row["validation_type"]: row for row in list_validation_results(conn)}
+    assert rows["fixed_horizon"]["exit_snapshot_id"] == "snap-fixed"
+    assert rows["target_stop"]["exit_snapshot_id"] == "snap-target"
+    assert rows["resolution_expiry"]["exit_snapshot_id"] == "snap-resolution"
+    assert rows["fixed_horizon"]["market_move_after_signal"] == pytest.approx(0.02)
+    assert rows["target_stop"]["market_move_after_signal"] == pytest.approx(0.10)
+    assert rows["resolution_expiry"]["market_move_after_signal"] == pytest.approx(0.05)
+
+
+def test_validation_target_stop_uses_sell_side_for_exit_selection():
+    conn = _conn()
+    shadow_signal_id = _seed_shadow_signal(conn, side="sell")
+    _insert_snapshot(conn, "snap-entry", "2026-05-07T11:59:30Z", 0.60)
+    _insert_snapshot(conn, "snap-buy-stop", "2026-05-07T12:05:00Z", 0.57)
+    _insert_snapshot(conn, "snap-sell-target", "2026-05-07T12:10:00Z", 0.54)
+
+    run_signal_validation(
+        conn,
+        shadow_signal_id,
+        default_poly_alpha_config(
+            {
+                "target_return": 0.10,
+                "stop_return": -0.05,
+            }
+        ),
+        NOW,
+    )
+
+    rows = {row["validation_type"]: row for row in list_validation_results(conn)}
+    assert rows["target_stop"]["exit_snapshot_id"] == "snap-sell-target"
+    assert rows["target_stop"]["gross_return"] == pytest.approx(0.10)
