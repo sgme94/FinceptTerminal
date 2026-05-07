@@ -1162,6 +1162,7 @@ Suggested API groups:
 - `/api/poly-alpha/research-runs`
 - `/api/poly-alpha/findings`
 - `/api/poly-alpha/shadow-signals`
+- `/api/poly-alpha/market-snapshots`
 - `/api/poly-alpha/validations`
 - `/api/poly-alpha/promotions`
 
@@ -1190,6 +1191,7 @@ Required coverage:
 - opportunity lifecycle transition table is enforced
 - scan runs group scan results and track status/summary counts
 - scan results store pre-opportunity no-trade attribution
+- scheduled scans create a scan run, attach all scan results, persist market snapshots, and surface the run in F7 Cockpit
 - exploration decisions support pass/watch/reject and update opportunity status
 - document ingestion deduplicates by payload hash
 - timestamp semantics preserve `published_at`, `fetched_at`, and `observed_at`
