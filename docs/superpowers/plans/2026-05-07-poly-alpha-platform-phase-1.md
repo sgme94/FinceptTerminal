@@ -194,6 +194,16 @@ def test_proposal_ttl_expired_does_not_expire_promoted_signal_state():
     assert state.shadow_signal_status == "promoted"
     assert state.promotion_decision == "promote"
 
+def test_signal_ttl_expired_preserves_existing_promotion_decision():
+    state = apply_opportunity_transition(
+        "signal_ttl_expired",
+        previous_shadow_signal_status="promoted",
+        previous_promotion_decision="promote",
+    )
+    assert state.opportunity_status == "expired"
+    assert state.shadow_signal_status == "expired"
+    assert state.promotion_decision == "promote"
+
 def test_watch_opportunity_ttl_expired_preserves_missing_signal_state():
     state = apply_opportunity_transition(
         "opportunity_ttl_expired",
@@ -302,7 +312,7 @@ Assert:
 - evidence packs cite documents and snapshots.
 - exploration decisions update status expectations.
 - exploration decisions map to `exploration_passed`, `exploration_watch`, or `exploration_rejected`.
-- lifecycle event names map to audit action names through a documented helper, for example `exploration_pass` -> `exploration_passed`, `validation_pass` -> `validation_completed`, `promotion_promote` -> `promotion_promoted`, and TTL events -> `expired`.
+- lifecycle event names map to audit action names through a documented helper, for example `exploration_pass` -> `exploration_passed`, `validation_pass` -> `validation_completed`, `promotion_promote` -> `promotion_approved`, `promotion_reject` -> `promotion_rejected`, `promotion_watch` -> `promotion_watch`, and TTL events -> `expired`.
 - shadow signals use allowed status values.
 - shadow signal creation maps to `shadow_signal_created`.
 - `paper_fill_skipped` can update opportunity status and write audit-compatible output.
@@ -670,7 +680,7 @@ Add tests for:
 
 Assert no request schema accepts private key, API secret, live order mode, or real CLOB order fields.
 
-Assert Poly Alpha audit events can be read through F8's audit path or a unified Poly Alpha audit response, including `document_ingested`, `evidence_pack_created`, `research_started`, `research_completed`, `validation_completed`, `promotion_*`, and `paper_fill_skipped`.
+Assert Poly Alpha audit events can be read through F8's audit path or a unified Poly Alpha audit response, including `document_ingested`, `evidence_pack_created`, `research_started`, `research_completed`, `validation_completed`, `promotion_approved`, `promotion_rejected`, `promotion_watch`, and `paper_fill_skipped`.
 
 - [ ] **Step 3: Run failing API tests**
 
