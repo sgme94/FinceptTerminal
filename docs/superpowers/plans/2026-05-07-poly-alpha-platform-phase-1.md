@@ -148,6 +148,38 @@ def test_post_approval_skip_is_first_class():
     assert state.promotion_decision == "promote"
 ```
 
+Also add a table-driven test for every required transition:
+
+```python
+@pytest.mark.parametrize(
+    ("event", "opportunity_status", "shadow_signal_status", "promotion_decision"),
+    [
+        ("scanner_ignore", None, None, None),
+        ("opportunity_discovered", "watch", None, None),
+        ("exploration_pass", "watch", None, None),
+        ("exploration_watch", "watch", None, None),
+        ("exploration_reject", "rejected", None, None),
+        ("shadow_signal_created", "shadow", "shadow", None),
+        ("validation_pass", "validated", "validated", None),
+        ("validation_fail", "rejected", "rejected", None),
+        ("promotion_watch", "validated", "validated", "watch"),
+        ("promotion_reject", "rejected", "rejected", "reject"),
+        ("promotion_promote", "promoted", "promoted", "promote"),
+        ("proposal_created", "proposed", "promoted", "promote"),
+        ("proposal_rejected", "rejected", "promoted", "promote"),
+        ("proposal_approved", "approved", "promoted", "promote"),
+        ("paper_fill_skipped", "skipped", "promoted", "promote"),
+        ("paper_fill_recorded", "filled", "promoted", "promote"),
+        ("ttl_expired", "expired", "expired", None),
+    ],
+)
+def test_lifecycle_transition_table(event, opportunity_status, shadow_signal_status, promotion_decision):
+    state = apply_opportunity_transition(event)
+    assert state.opportunity_status == opportunity_status
+    assert state.shadow_signal_status == shadow_signal_status
+    assert state.promotion_decision == promotion_decision
+```
+
 - [ ] **Step 3: Run the failing model tests**
 
 Run:
@@ -207,6 +239,10 @@ def test_ensure_poly_alpha_schema_creates_phase_1_tables(tmp_path):
     assert "poly_alpha_config_versions" in names
     assert "poly_alpha_source_sets" in names
     assert "poly_alpha_strategy_versions" in names
+    assert "poly_alpha_documents" in names
+    assert "poly_alpha_events" in names
+    assert "poly_alpha_event_market_links" in names
+    assert "poly_alpha_research_runs" in names
     assert "poly_alpha_scan_runs" in names
     assert "poly_alpha_scan_results" in names
     assert "poly_alpha_opportunities" in names
@@ -226,15 +262,25 @@ Assert:
 - `record_scan_run()` returns a scan run ID.
 - `record_scan_result(decision="ignore", reason="wide_spread")` persists the no-trade reason.
 - `list_scan_runs()` includes summary counts.
+- creating an opportunity writes or can expose `opportunity_discovered`.
+- recording a document writes or can expose `document_ingested`.
+- recording an evidence pack writes or can expose `evidence_pack_created`.
 
 - [ ] **Step 3: Write failing CRUD tests for evidence and lifecycle**
 
 Assert:
 
+- documents deduplicate by payload hash.
+- events persist event type, assets, and status.
+- event-market links use generic venue identifiers and adapter metadata.
+- research runs carry opportunity, evidence pack, strategy, model config, and status.
 - evidence packs cite documents and snapshots.
 - exploration decisions update status expectations.
+- exploration decisions map to `exploration_passed`, `exploration_watch`, or `exploration_rejected`.
 - shadow signals use allowed status values.
+- shadow signal creation maps to `shadow_signal_created`.
 - `paper_fill_skipped` can update opportunity status and write audit-compatible output.
+- all record helpers that represent lifecycle actions can optionally write matching Poly Alpha audit actions.
 
 - [ ] **Step 4: Run failing store tests**
 
@@ -252,11 +298,14 @@ Implement focused helpers:
 - `record_config_version(conn, ...)`
 - `record_source_set(conn, ...)`
 - `record_strategy_version(conn, ...)`
+- `record_document(conn, ...)`
+- `record_event(conn, ...)`
+- `record_event_market_link(conn, ...)`
+- `record_research_run(conn, ...)`
 - `record_scan_run(conn, ...)`
 - `record_scan_result(conn, ...)`
 - `record_opportunity(conn, ...)`
 - `update_opportunity_status(conn, ...)`
-- `record_document(conn, ...)`
 - `record_market_snapshot(conn, ...)`
 - `record_evidence_pack(conn, ...)`
 - `record_exploration_decision(conn, ...)`
@@ -499,6 +548,9 @@ Assert:
 
 - proposal creation only happens after promotion.
 - proposal has `source: poly_alpha` in features/metadata.
+- proposal creation writes or exposes `proposal_created`.
+- manual approval/rejection continues to write `proposal_approved` / `proposal_rejected`.
+- paper fill records `paper_fill_recorded`.
 - post-approval skip updates opportunity to `skipped` and writes `paper_fill_skipped`.
 - no live trading fields are accepted.
 
@@ -519,6 +571,8 @@ Implement:
 - `record_post_approval_skip(conn, opportunity_id, proposal_id, reason, now)`
 
 Reuse existing `record_trade_proposal()` and `record_audit_event()` where practical.
+
+Ensure Poly Alpha audit lineage can be listed by F8 through either `algo_polymarket_audit_events` or a unified API/view.
 
 - [ ] **Step 6: Run promotion tests to pass**
 
@@ -552,6 +606,11 @@ Add tests for:
 - `GET /api/poly-alpha/config-versions`
 - `GET /api/poly-alpha/source-sets`
 - `GET /api/poly-alpha/strategy-versions`
+- `GET /api/poly-alpha/documents`
+- `GET /api/poly-alpha/events`
+- `GET /api/poly-alpha/links`
+- `GET /api/poly-alpha/research-runs`
+- `GET /api/poly-alpha/findings`
 - `GET /api/poly-alpha/scan-runs`
 - `GET /api/poly-alpha/scan-results`
 - `GET /api/poly-alpha/opportunities`
@@ -574,6 +633,8 @@ Add tests for:
 - paper proposal creation from promoted signal.
 
 Assert no request schema accepts private key, API secret, live order mode, or real CLOB order fields.
+
+Assert Poly Alpha audit events can be read through F8's audit path or a unified Poly Alpha audit response, including `document_ingested`, `evidence_pack_created`, `research_started`, `research_completed`, `validation_completed`, `promotion_*`, and `paper_fill_skipped`.
 
 - [ ] **Step 3: Run failing API tests**
 
@@ -631,6 +692,11 @@ Assert:
 - `fetchPolyAlphaOpportunities()` calls `/api/poly-alpha/opportunities`.
 - `fetchPolyAlphaScanRuns()` calls `/api/poly-alpha/scan-runs`.
 - `fetchPolyAlphaMarketSnapshots()` calls `/api/poly-alpha/market-snapshots`.
+- `fetchPolyAlphaDocuments()` calls `/api/poly-alpha/documents`.
+- `fetchPolyAlphaEvents()` calls `/api/poly-alpha/events`.
+- `fetchPolyAlphaLinks()` calls `/api/poly-alpha/links`.
+- `fetchPolyAlphaResearchRuns()` calls `/api/poly-alpha/research-runs`.
+- `fetchPolyAlphaFindings()` calls `/api/poly-alpha/findings`.
 - `fetchPolyAlphaCockpit()` or equivalent aggregator combines opportunities, scan runs, shadow signals, validations, and promotions.
 - F3 filters keep shadow signal status and promotion decision separate.
 
@@ -649,6 +715,11 @@ Add:
 - `PolyAlphaOpportunity`
 - `PolyAlphaScanRun`
 - `PolyAlphaScanResult`
+- `PolyAlphaDocument`
+- `PolyAlphaEvent`
+- `PolyAlphaEventMarketLink`
+- `PolyAlphaResearchRun`
+- `PolyAlphaAgentFinding`
 - `PolyAlphaEvidencePack`
 - `PolyAlphaMarketSnapshot`
 - `PolyAlphaShadowSignal`
@@ -681,6 +752,8 @@ git commit -m "feat: add poly alpha frontend client"
 ### Task 9: F7 Cockpit and Page Integrations
 
 **Files:**
+- Modify: `web/polymarket-terminal/src/pages/MarketsPage.tsx`
+- Modify: `web/polymarket-terminal/src/pages/MarketsPage.test.tsx`
 - Modify: `web/polymarket-terminal/src/pages/AgentsPage.tsx`
 - Modify: `web/polymarket-terminal/src/pages/AgentsPage.test.tsx`
 - Modify: `web/polymarket-terminal/src/pages/SignalsPage.tsx`
@@ -704,7 +777,18 @@ Assert F7 displays:
 - Failed and why
 - scheduled scan runs.
 
-- [ ] **Step 2: Write failing F3 tests**
+- [ ] **Step 2: Write failing F2 Markets tests**
+
+Assert F2 displays:
+
+- linked event count
+- latest evidence timestamp
+- market probability versus estimated probability
+- liquidity, spread, and order book freshness
+- link confidence
+- action affordance to send market to research/Cockpit.
+
+- [ ] **Step 3: Write failing F3 tests**
 
 Assert:
 
@@ -712,7 +796,7 @@ Assert:
 - status filters and promotion decision filters are separate.
 - `watch` is only a promotion decision filter.
 
-- [ ] **Step 3: Write failing F5/F8/Risk tests**
+- [ ] **Step 4: Write failing F5/F8/Risk tests**
 
 Assert:
 
@@ -721,15 +805,15 @@ Assert:
 - F4 Risk only shows promoted proposals.
 - Risk page does not show raw shadow signals.
 
-- [ ] **Step 4: Run failing page tests**
+- [ ] **Step 5: Run failing page tests**
 
 ```powershell
-npm test --prefix web/polymarket-terminal -- src/pages/AgentsPage.test.tsx src/pages/SignalsPage.test.tsx src/pages/NewsPage.test.tsx src/pages/RiskPage.test.tsx src/pages/AuditPage.test.tsx
+npm test --prefix web/polymarket-terminal -- src/pages/MarketsPage.test.tsx src/pages/AgentsPage.test.tsx src/pages/SignalsPage.test.tsx src/pages/NewsPage.test.tsx src/pages/RiskPage.test.tsx src/pages/AuditPage.test.tsx
 ```
 
 Expected: fail.
 
-- [ ] **Step 5: Implement UI changes**
+- [ ] **Step 6: Implement UI changes**
 
 Use existing terminal components:
 
@@ -740,18 +824,18 @@ Use existing terminal components:
 
 Keep layout dense and work-focused. Do not create a marketing or landing page. Keep F1-F8 route behavior unchanged.
 
-- [ ] **Step 6: Run page tests to pass**
+- [ ] **Step 7: Run page tests to pass**
 
 ```powershell
-npm test --prefix web/polymarket-terminal -- src/pages/AgentsPage.test.tsx src/pages/SignalsPage.test.tsx src/pages/NewsPage.test.tsx src/pages/RiskPage.test.tsx src/pages/AuditPage.test.tsx
+npm test --prefix web/polymarket-terminal -- src/pages/MarketsPage.test.tsx src/pages/AgentsPage.test.tsx src/pages/SignalsPage.test.tsx src/pages/NewsPage.test.tsx src/pages/RiskPage.test.tsx src/pages/AuditPage.test.tsx
 ```
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```powershell
-git add web/polymarket-terminal/src/pages/AgentsPage.tsx web/polymarket-terminal/src/pages/AgentsPage.test.tsx web/polymarket-terminal/src/pages/SignalsPage.tsx web/polymarket-terminal/src/pages/SignalsPage.test.tsx web/polymarket-terminal/src/pages/NewsPage.tsx web/polymarket-terminal/src/pages/NewsPage.test.tsx web/polymarket-terminal/src/pages/RiskPage.tsx web/polymarket-terminal/src/pages/RiskPage.test.tsx web/polymarket-terminal/src/pages/AuditPage.tsx web/polymarket-terminal/src/pages/AuditPage.test.tsx
+git add web/polymarket-terminal/src/pages/MarketsPage.tsx web/polymarket-terminal/src/pages/MarketsPage.test.tsx web/polymarket-terminal/src/pages/AgentsPage.tsx web/polymarket-terminal/src/pages/AgentsPage.test.tsx web/polymarket-terminal/src/pages/SignalsPage.tsx web/polymarket-terminal/src/pages/SignalsPage.test.tsx web/polymarket-terminal/src/pages/NewsPage.tsx web/polymarket-terminal/src/pages/NewsPage.test.tsx web/polymarket-terminal/src/pages/RiskPage.tsx web/polymarket-terminal/src/pages/RiskPage.test.tsx web/polymarket-terminal/src/pages/AuditPage.tsx web/polymarket-terminal/src/pages/AuditPage.test.tsx
 git commit -m "feat: add poly alpha cockpit UI"
 ```
 
@@ -867,4 +951,3 @@ When implementation and review are complete:
 - Use `superpowers:finishing-a-development-branch`.
 - Present the standard options.
 - If user chooses PR, push the branch and create/update PR.
-
