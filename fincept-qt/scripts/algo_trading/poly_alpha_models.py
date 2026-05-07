@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+OPPORTUNITY_STATUS_IGNORED = "ignored"
+OPPORTUNITY_STATUS_WATCH = "watch"
+OPPORTUNITY_STATUS_SHADOW = "shadow"
+OPPORTUNITY_STATUS_VALIDATED = "validated"
+OPPORTUNITY_STATUS_REJECTED = "rejected"
+OPPORTUNITY_STATUS_PROMOTED = "promoted"
+OPPORTUNITY_STATUS_PROPOSED = "proposed"
+OPPORTUNITY_STATUS_APPROVED = "approved"
+OPPORTUNITY_STATUS_FILLED = "filled"
+OPPORTUNITY_STATUS_SKIPPED = "skipped"
+OPPORTUNITY_STATUS_EXPIRED = "expired"
+
+SHADOW_SIGNAL_STATUS_SHADOW = "shadow"
+SHADOW_SIGNAL_STATUS_VALIDATED = "validated"
+SHADOW_SIGNAL_STATUS_REJECTED = "rejected"
+SHADOW_SIGNAL_STATUS_PROMOTED = "promoted"
+SHADOW_SIGNAL_STATUS_EXPIRED = "expired"
+
+PROMOTION_DECISION_WATCH = "watch"
+PROMOTION_DECISION_PROMOTE = "promote"
+PROMOTION_DECISION_REJECT = "reject"
+
+PRIMARY_REASON_LATE_INFORMATION = "late_information"
+PRIMARY_REASON_LOW_LIQUIDITY = "low_liquidity"
+PRIMARY_REASON_WIDE_SPREAD = "wide_spread"
+PRIMARY_REASON_UNCLEAR_RESOLUTION = "unclear_resolution"
+PRIMARY_REASON_INSUFFICIENT_EDGE = "insufficient_edge"
+PRIMARY_REASON_CRITIC_BLOCKER = "critic_blocker"
+PRIMARY_REASON_FAILED_VALIDATION = "failed_validation"
+PRIMARY_REASON_MISSING_MARKET_SNAPSHOT = "missing_market_snapshot"
+PRIMARY_REASON_CAPACITY_TOO_SMALL = "capacity_too_small"
+PRIMARY_REASON_APPROVAL_LATENCY_RISK = "approval_latency_risk"
+
+OPPORTUNITY_STATUSES = (
+    OPPORTUNITY_STATUS_IGNORED,
+    OPPORTUNITY_STATUS_WATCH,
+    OPPORTUNITY_STATUS_SHADOW,
+    OPPORTUNITY_STATUS_VALIDATED,
+    OPPORTUNITY_STATUS_REJECTED,
+    OPPORTUNITY_STATUS_PROMOTED,
+    OPPORTUNITY_STATUS_PROPOSED,
+    OPPORTUNITY_STATUS_APPROVED,
+    OPPORTUNITY_STATUS_FILLED,
+    OPPORTUNITY_STATUS_SKIPPED,
+    OPPORTUNITY_STATUS_EXPIRED,
+)
+SHADOW_SIGNAL_STATUSES = (
+    SHADOW_SIGNAL_STATUS_SHADOW,
+    SHADOW_SIGNAL_STATUS_VALIDATED,
+    SHADOW_SIGNAL_STATUS_REJECTED,
+    SHADOW_SIGNAL_STATUS_PROMOTED,
+    SHADOW_SIGNAL_STATUS_EXPIRED,
+)
+PROMOTION_DECISIONS = (
+    PROMOTION_DECISION_WATCH,
+    PROMOTION_DECISION_PROMOTE,
+    PROMOTION_DECISION_REJECT,
+)
+PRIMARY_REASON_CODES = (
+    PRIMARY_REASON_LATE_INFORMATION,
+    PRIMARY_REASON_LOW_LIQUIDITY,
+    PRIMARY_REASON_WIDE_SPREAD,
+    PRIMARY_REASON_UNCLEAR_RESOLUTION,
+    PRIMARY_REASON_INSUFFICIENT_EDGE,
+    PRIMARY_REASON_CRITIC_BLOCKER,
+    PRIMARY_REASON_FAILED_VALIDATION,
+    PRIMARY_REASON_MISSING_MARKET_SNAPSHOT,
+    PRIMARY_REASON_CAPACITY_TOO_SMALL,
+    PRIMARY_REASON_APPROVAL_LATENCY_RISK,
+)
+
+EVENT_SCANNER_IGNORE = "scanner_ignore"
+EVENT_OPPORTUNITY_DISCOVERED = "opportunity_discovered"
+EVENT_EXPLORATION_PASS = "exploration_pass"
+EVENT_EXPLORATION_WATCH = "exploration_watch"
+EVENT_EXPLORATION_REJECT = "exploration_reject"
+EVENT_SHADOW_SIGNAL_CREATED = "shadow_signal_created"
+EVENT_VALIDATION_PASS = "validation_pass"
+EVENT_VALIDATION_FAIL = "validation_fail"
+EVENT_PROMOTION_WATCH = "promotion_watch"
+EVENT_PROMOTION_REJECT = "promotion_reject"
+EVENT_PROMOTION_PROMOTE = "promotion_promote"
+EVENT_PROPOSAL_CREATED = "proposal_created"
+EVENT_PROPOSAL_REJECTED = "proposal_rejected"
+EVENT_PROPOSAL_APPROVED = "proposal_approved"
+EVENT_PAPER_FILL_SKIPPED = "paper_fill_skipped"
+EVENT_PAPER_FILL_RECORDED = "paper_fill_recorded"
+EVENT_SIGNAL_TTL_EXPIRED = "signal_ttl_expired"
+EVENT_PROPOSAL_TTL_EXPIRED = "proposal_ttl_expired"
+EVENT_OPPORTUNITY_TTL_EXPIRED = "opportunity_ttl_expired"
+
+
+@dataclass(frozen=True)
+class LifecycleState:
+    opportunity_status: str | None = None
+    shadow_signal_status: str | None = None
+    promotion_decision: str | None = None
+
+
+_STATIC_TRANSITIONS = {
+    EVENT_SCANNER_IGNORE: LifecycleState(),
+    EVENT_OPPORTUNITY_DISCOVERED: LifecycleState(OPPORTUNITY_STATUS_WATCH),
+    EVENT_EXPLORATION_PASS: LifecycleState(OPPORTUNITY_STATUS_WATCH),
+    EVENT_EXPLORATION_WATCH: LifecycleState(OPPORTUNITY_STATUS_WATCH),
+    EVENT_EXPLORATION_REJECT: LifecycleState(OPPORTUNITY_STATUS_REJECTED),
+    EVENT_SHADOW_SIGNAL_CREATED: LifecycleState(
+        OPPORTUNITY_STATUS_SHADOW,
+        SHADOW_SIGNAL_STATUS_SHADOW,
+    ),
+    EVENT_VALIDATION_PASS: LifecycleState(
+        OPPORTUNITY_STATUS_VALIDATED,
+        SHADOW_SIGNAL_STATUS_VALIDATED,
+    ),
+    EVENT_VALIDATION_FAIL: LifecycleState(
+        OPPORTUNITY_STATUS_REJECTED,
+        SHADOW_SIGNAL_STATUS_REJECTED,
+    ),
+    EVENT_PROMOTION_WATCH: LifecycleState(
+        OPPORTUNITY_STATUS_VALIDATED,
+        SHADOW_SIGNAL_STATUS_VALIDATED,
+        PROMOTION_DECISION_WATCH,
+    ),
+    EVENT_PROMOTION_REJECT: LifecycleState(
+        OPPORTUNITY_STATUS_REJECTED,
+        SHADOW_SIGNAL_STATUS_REJECTED,
+        PROMOTION_DECISION_REJECT,
+    ),
+    EVENT_PROMOTION_PROMOTE: LifecycleState(
+        OPPORTUNITY_STATUS_PROMOTED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+    EVENT_PROPOSAL_CREATED: LifecycleState(
+        OPPORTUNITY_STATUS_PROPOSED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+    EVENT_PROPOSAL_REJECTED: LifecycleState(
+        OPPORTUNITY_STATUS_REJECTED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+    EVENT_PROPOSAL_APPROVED: LifecycleState(
+        OPPORTUNITY_STATUS_APPROVED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+    EVENT_PAPER_FILL_SKIPPED: LifecycleState(
+        OPPORTUNITY_STATUS_SKIPPED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+    EVENT_PAPER_FILL_RECORDED: LifecycleState(
+        OPPORTUNITY_STATUS_FILLED,
+        SHADOW_SIGNAL_STATUS_PROMOTED,
+        PROMOTION_DECISION_PROMOTE,
+    ),
+}
+
+
+def apply_opportunity_transition(
+    event: str,
+    previous_shadow_signal_status: str | None = None,
+    previous_promotion_decision: str | None = None,
+) -> LifecycleState:
+    if event == EVENT_SIGNAL_TTL_EXPIRED:
+        return LifecycleState(
+            OPPORTUNITY_STATUS_EXPIRED,
+            SHADOW_SIGNAL_STATUS_EXPIRED,
+            previous_promotion_decision,
+        )
+    if event == EVENT_PROPOSAL_TTL_EXPIRED:
+        shadow_signal_status = (
+            previous_shadow_signal_status
+            if previous_shadow_signal_status is not None
+            else SHADOW_SIGNAL_STATUS_PROMOTED
+        )
+        promotion_decision = (
+            previous_promotion_decision
+            if previous_promotion_decision is not None
+            else PROMOTION_DECISION_PROMOTE
+        )
+        return LifecycleState(
+            OPPORTUNITY_STATUS_EXPIRED,
+            shadow_signal_status,
+            promotion_decision,
+        )
+    if event == EVENT_OPPORTUNITY_TTL_EXPIRED:
+        return LifecycleState(
+            OPPORTUNITY_STATUS_EXPIRED,
+            previous_shadow_signal_status,
+            previous_promotion_decision,
+        )
+    if event not in _STATIC_TRANSITIONS:
+        raise ValueError(f"Unknown opportunity transition event: {event}")
+    return _STATIC_TRANSITIONS[event]
