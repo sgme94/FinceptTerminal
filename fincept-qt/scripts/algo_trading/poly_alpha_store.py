@@ -8,7 +8,6 @@ from typing import Any
 from poly_alpha_models import (
     OPPORTUNITY_STATUSES,
     PROMOTION_DECISIONS,
-    SHADOW_SIGNAL_STATUSES,
     apply_opportunity_transition,
 )
 
@@ -40,6 +39,8 @@ _LIFECYCLE_AUDIT_ACTIONS = {
     "proposal_created": "proposal_created",
     "proposal_approved": "proposal_approved",
     "proposal_rejected": "proposal_rejected",
+    "opportunity_rejected": "opportunity_rejected",
+    "opportunity_watch": "opportunity_watch",
     "paper_fill_recorded": "paper_fill_recorded",
     "paper_fill_skipped": "paper_fill_skipped",
     "signal_ttl_expired": "expired",
@@ -1015,7 +1016,10 @@ def update_opportunity_status(
         audit_action = (
             audit_action_for_lifecycle_event(lifecycle_event)
             if lifecycle_event is not None
-            else "opportunity_status_updated"
+            else {
+                "rejected": "opportunity_rejected",
+                "watch": "opportunity_watch",
+            }.get(status, "opportunity_status_updated")
         )
 
     conn.execute(
@@ -1317,8 +1321,8 @@ def record_shadow_signal(
     shadow_signal_id: str | None = None,
     write_audit: bool = False,
 ) -> str:
-    if status not in SHADOW_SIGNAL_STATUSES:
-        raise ValueError(f"Unsupported shadow signal status: {status}")
+    if status != "shadow":
+        raise ValueError("Shadow signal creation requires status='shadow'")
 
     shadow_signal_id = shadow_signal_id or _new_id("shadow")
     conn.execute(
