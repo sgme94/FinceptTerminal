@@ -58,6 +58,129 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
+def _row_count(conn: sqlite3.Connection, table_name: str) -> int:
+    return conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+
+
+def _record_test_opportunity(
+    conn: sqlite3.Connection,
+    *,
+    opportunity_id: str = "opp-test",
+    status: str = "watch",
+) -> str:
+    return record_opportunity(
+        conn,
+        opportunity_id=opportunity_id,
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id=f"market-{opportunity_id}",
+        venue_contract_id=f"contract-{opportunity_id}",
+        outcome_id="yes",
+        title=f"Opportunity {opportunity_id}",
+        alpha_family="cross_market_probability",
+        status=status,
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _record_test_research_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str = "run-test",
+    opportunity_id: str = "opp-test",
+) -> str:
+    return record_research_run(
+        conn,
+        run_id=run_id,
+        trigger_type="manual_task",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="pack-1",
+        strategy_version_id="strat-v1",
+        event_id="event-1",
+        venue="polymarket",
+        venue_market_id=f"market-{opportunity_id}",
+        requested_by="user",
+        started_at=NOW,
+        status="running",
+        model_config={},
+        created_at=NOW,
+    )
+
+
+def _record_test_shadow_signal(
+    conn: sqlite3.Connection,
+    *,
+    shadow_signal_id: str = "shadow-test",
+    opportunity_id: str = "opp-test",
+    run_id: str = "run-test",
+) -> str:
+    return record_shadow_signal(
+        conn,
+        shadow_signal_id=shadow_signal_id,
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id=f"market-{opportunity_id}",
+        venue_contract_id=f"contract-{opportunity_id}",
+        outcome_id="yes",
+        adapter_metadata={},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="shadow",
+        created_at=NOW,
+        expires_at="2026-05-08T00:00:00Z",
+    )
+
+
+def _record_test_validation_result(
+    conn: sqlite3.Connection,
+    *,
+    opportunity_id: str = "opp-test",
+    shadow_signal_id: str = "shadow-test",
+    pass_fail: str = "pass",
+) -> str:
+    return record_validation_result(
+        conn,
+        opportunity_id=opportunity_id,
+        shadow_signal_id=shadow_signal_id,
+        strategy_version_id="strat-v1",
+        entry_snapshot_id="snap-entry",
+        exit_snapshot_id="snap-exit",
+        validation_type="fixed_horizon",
+        entry_price=0.42,
+        exit_price=0.48,
+        holding_period="1h",
+        gross_return=0.14,
+        cost_adjusted_return=0.12,
+        closing_line_value=0.05,
+        brier_score=0.21,
+        calibration_error=0.02,
+        edge_decay=0.01,
+        information_lag_sec=30,
+        fetch_lag_sec=5,
+        market_move_before_signal=0.01,
+        market_move_after_signal=0.06,
+        max_adverse_excursion=-0.02,
+        max_favorable_excursion=0.08,
+        liquidity_assumption="top_of_book",
+        slippage_assumption="one_tick",
+        pass_fail=pass_fail,
+        failure_reason="" if pass_fail == "pass" else "failed_validation",
+        created_at=NOW,
+    )
+
+
 def test_ensure_poly_alpha_schema_creates_phase_1_tables(tmp_path):
     conn = sqlite3.connect(tmp_path / "poly.db")
     ensure_poly_alpha_schema(conn)
@@ -308,6 +431,110 @@ def test_scan_runs_persist_no_trade_attribution_and_creation_audit():
     assert "document_ingested" in audit_actions
     assert "evidence_pack_created" in audit_actions
     assert evidence_pack_id
+
+
+def test_scan_result_rejects_invalid_decision_without_insert_or_count_update():
+    conn = _conn()
+    scan_run_id = record_scan_run(
+        conn,
+        scan_run_id="scan-invalid-decision",
+        trigger_type="manual_scan",
+        strategy_version_id="strat-v1",
+        config_version_id="cfg-v1",
+        source_set_version="sources-v1",
+        status="running",
+        started_at=NOW,
+        created_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported scan result decision"):
+        record_scan_result(
+            conn,
+            scan_run_id=scan_run_id,
+            strategy_version_id="strat-v1",
+            venue="polymarket",
+            venue_market_id="market-bad",
+            venue_contract_id="contract-bad",
+            outcome_id="yes",
+            decision="bad",
+            reason="bad_decision",
+            source_snapshot_ids=[],
+            source_document_ids=[],
+            observed_at=NOW,
+            created_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_scan_results") == 0
+    assert list_scan_runs(conn)[0]["scanned_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("created_opportunity_id", "match"),
+    [
+        ("", "created_opportunity_id is required"),
+        ("missing-opp", "Unknown opportunity_id"),
+    ],
+)
+def test_create_opportunity_scan_result_requires_existing_opportunity(
+    created_opportunity_id,
+    match,
+):
+    conn = _conn()
+    scan_run_id = record_scan_run(
+        conn,
+        scan_run_id=f"scan-{created_opportunity_id or 'blank'}",
+        trigger_type="manual_scan",
+        strategy_version_id="strat-v1",
+        config_version_id="cfg-v1",
+        source_set_version="sources-v1",
+        status="running",
+        started_at=NOW,
+        created_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        record_scan_result(
+            conn,
+            scan_run_id=scan_run_id,
+            strategy_version_id="strat-v1",
+            venue="polymarket",
+            venue_market_id="market-create",
+            venue_contract_id="contract-create",
+            outcome_id="yes",
+            decision="create_opportunity",
+            reason="edge_detected",
+            source_snapshot_ids=[],
+            source_document_ids=[],
+            created_opportunity_id=created_opportunity_id,
+            observed_at=NOW,
+            created_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_scan_results") == 0
+    assert list_scan_runs(conn)[0]["created_opportunity_count"] == 0
+
+
+def test_scan_result_requires_existing_scan_run_before_insert():
+    conn = _conn()
+
+    with pytest.raises(ValueError, match="Unknown scan_run_id"):
+        record_scan_result(
+            conn,
+            scan_run_id="missing-scan",
+            strategy_version_id="strat-v1",
+            venue="polymarket",
+            venue_market_id="market-missing-scan",
+            venue_contract_id="contract-missing-scan",
+            outcome_id="yes",
+            decision="ignore",
+            reason="wide_spread",
+            source_snapshot_ids=[],
+            source_document_ids=[],
+            observed_at=NOW,
+            created_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_scan_results") == 0
 
 
 def test_evidence_chain_persists_citations_and_lifecycle_records():
@@ -886,6 +1113,140 @@ def test_shadow_signal_creation_rejects_non_shadow_status_without_updating_oppor
 
     assert list_opportunities(conn)[0]["status"] == "watch"
     assert list_shadow_signals(conn) == []
+
+
+def test_shadow_signal_requires_existing_opportunity_before_insert():
+    conn = _conn()
+    _record_test_research_run(
+        conn,
+        run_id="run-with-missing-opportunity",
+        opportunity_id="missing-opp",
+    )
+
+    with pytest.raises(ValueError, match="Unknown opportunity_id"):
+        _record_test_shadow_signal(
+            conn,
+            opportunity_id="missing-opp",
+            run_id="run-with-missing-opportunity",
+        )
+
+    assert _row_count(conn, "poly_alpha_shadow_signals") == 0
+
+
+def test_shadow_signal_requires_existing_research_run_before_insert():
+    conn = _conn()
+    opportunity_id = _record_test_opportunity(conn)
+
+    with pytest.raises(ValueError, match="Unknown run_id"):
+        _record_test_shadow_signal(
+            conn,
+            opportunity_id=opportunity_id,
+            run_id="missing-run",
+        )
+
+    assert list_opportunities(conn)[0]["status"] == "watch"
+    assert _row_count(conn, "poly_alpha_shadow_signals") == 0
+
+
+@pytest.mark.parametrize(
+    ("opportunity_id", "shadow_signal_id", "match"),
+    [
+        ("missing-opp", "shadow-test", "Unknown opportunity_id"),
+        ("opp-test", "missing-shadow", "Unknown shadow_signal_id"),
+    ],
+)
+def test_validation_result_requires_existing_opportunity_and_shadow_signal_before_insert(
+    opportunity_id,
+    shadow_signal_id,
+    match,
+):
+    conn = _conn()
+    _record_test_opportunity(conn)
+    _record_test_research_run(conn)
+    _record_test_shadow_signal(conn)
+
+    with pytest.raises(ValueError, match=match):
+        _record_test_validation_result(
+            conn,
+            opportunity_id=opportunity_id,
+            shadow_signal_id=shadow_signal_id,
+        )
+
+    assert _row_count(conn, "poly_alpha_validation_results") == 0
+    assert list_opportunities(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
+
+def test_validation_result_rejects_unknown_pass_fail_before_insert_or_status_update():
+    conn = _conn()
+    _record_test_opportunity(conn)
+    _record_test_research_run(conn)
+    _record_test_shadow_signal(conn)
+
+    with pytest.raises(ValueError, match="Unsupported validation pass_fail"):
+        _record_test_validation_result(conn, pass_fail="maybe")
+
+    assert _row_count(conn, "poly_alpha_validation_results") == 0
+    assert list_opportunities(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
+
+@pytest.mark.parametrize(
+    ("opportunity_id", "shadow_signal_id", "match"),
+    [
+        ("missing-opp", "shadow-test", "Unknown opportunity_id"),
+        ("opp-test", "missing-shadow", "Unknown shadow_signal_id"),
+    ],
+)
+def test_promotion_decision_requires_existing_opportunity_and_shadow_signal_before_insert(
+    opportunity_id,
+    shadow_signal_id,
+    match,
+):
+    conn = _conn()
+    _record_test_opportunity(conn)
+    _record_test_research_run(conn)
+    _record_test_shadow_signal(conn)
+
+    with pytest.raises(ValueError, match=match):
+        record_promotion_decision(
+            conn,
+            opportunity_id=opportunity_id,
+            shadow_signal_id=shadow_signal_id,
+            strategy_version_id="strat-v1",
+            decision="promote",
+            reason="gate_passed",
+            prediction_metrics={},
+            trading_metrics={},
+            metrics={},
+            critic_blockers=[],
+            risk_checks={"paper_only": True},
+            proposal_id="",
+            decided_at=NOW,
+        )
+
+    assert _row_count(conn, "poly_alpha_promotion_decisions") == 0
+    assert list_opportunities(conn)[0]["status"] == "shadow"
+    assert list_shadow_signals(conn)[0]["status"] == "shadow"
+
+
+def test_lifecycle_event_status_contradiction_raises_without_update_or_audit():
+    conn = _conn()
+    opportunity_id = _record_test_opportunity(conn, status="promoted")
+
+    with pytest.raises(ValueError, match="Conflicting status for lifecycle_event"):
+        update_opportunity_status(
+            conn,
+            opportunity_id=opportunity_id,
+            lifecycle_event="paper_fill_skipped",
+            status="filled",
+            updated_at=NOW,
+            expected_status="promoted",
+            write_audit=True,
+        )
+
+    assert list_opportunities(conn)[0]["status"] == "promoted"
+    assert list_poly_alpha_audit_events(conn) == []
 
 
 @pytest.mark.parametrize(

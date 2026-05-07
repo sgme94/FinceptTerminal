@@ -17,6 +17,8 @@ _EXPLORATION_STATUS_BY_DECISION = {
     "watch": "watch",
     "reject": "rejected",
 }
+_SCAN_RESULT_DECISIONS = ("ignore", "watch", "create_opportunity")
+_VALIDATION_PASS_FAIL_VALUES = ("pass", "fail")
 
 _LIFECYCLE_AUDIT_ACTIONS = {
     "config_version_created": "config_version_created",
@@ -869,6 +871,26 @@ def record_scan_result(
     created_opportunity_id: str = "",
     scan_result_id: str | None = None,
 ) -> str:
+    if decision not in _SCAN_RESULT_DECISIONS:
+        raise ValueError(f"Unsupported scan result decision: {decision}")
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_scan_runs",
+        column_name="scan_run_id",
+        value=scan_run_id,
+        label="scan_run_id",
+    )
+    if decision == "create_opportunity":
+        if not created_opportunity_id:
+            raise ValueError("created_opportunity_id is required")
+        _require_row_exists(
+            conn,
+            table_name="poly_alpha_opportunities",
+            column_name="opportunity_id",
+            value=created_opportunity_id,
+            label="opportunity_id",
+        )
+
     scan_result_id = scan_result_id or _new_id("scan-result")
     conn.execute(
         """
@@ -896,7 +918,7 @@ def record_scan_result(
             created_at,
         ),
     )
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_scan_runs
         SET scanned_count = scanned_count + 1,
@@ -912,6 +934,7 @@ def record_scan_result(
             scan_run_id,
         ),
     )
+    _require_single_row_update(cursor, "scan run summary")
     return scan_result_id
 
 
@@ -1006,7 +1029,9 @@ def update_opportunity_status(
 
     if lifecycle_event is not None:
         transition = apply_opportunity_transition(lifecycle_event)
-        status = status or transition.opportunity_status
+        if status is not None and status != transition.opportunity_status:
+            raise ValueError("Conflicting status for lifecycle_event")
+        status = transition.opportunity_status
     if status is None:
         raise ValueError("Opportunity status or lifecycle_event is required")
     _require_opportunity_status(status)
@@ -1022,7 +1047,7 @@ def update_opportunity_status(
             }.get(status, "opportunity_status_updated")
         )
 
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_opportunities
         SET status = ?,
@@ -1032,6 +1057,7 @@ def update_opportunity_status(
         """,
         (status, primary_reason, primary_reason, updated_at, opportunity_id),
     )
+    _require_single_row_update(cursor, "opportunity status")
     if write_audit:
         _record_audit_event(
             conn,
@@ -1323,6 +1349,20 @@ def record_shadow_signal(
 ) -> str:
     if status != "shadow":
         raise ValueError("Shadow signal creation requires status='shadow'")
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_opportunities",
+        column_name="opportunity_id",
+        value=opportunity_id,
+        label="opportunity_id",
+    )
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_research_runs",
+        column_name="run_id",
+        value=run_id,
+        label="run_id",
+    )
 
     shadow_signal_id = shadow_signal_id or _new_id("shadow")
     conn.execute(
@@ -1357,7 +1397,7 @@ def record_shadow_signal(
         ),
     )
     transition = apply_opportunity_transition("shadow_signal_created")
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_opportunities
         SET status = ?, updated_at = ?
@@ -1365,6 +1405,7 @@ def record_shadow_signal(
         """,
         (transition.opportunity_status, created_at, opportunity_id),
     )
+    _require_single_row_update(cursor, "opportunity shadow status")
     if write_audit:
         _record_audit_event(
             conn,
@@ -1411,6 +1452,23 @@ def record_validation_result(
     validation_id: str | None = None,
     write_audit: bool = False,
 ) -> str:
+    if pass_fail not in _VALIDATION_PASS_FAIL_VALUES:
+        raise ValueError(f"Unsupported validation pass_fail: {pass_fail}")
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_opportunities",
+        column_name="opportunity_id",
+        value=opportunity_id,
+        label="opportunity_id",
+    )
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_shadow_signals",
+        column_name="shadow_signal_id",
+        value=shadow_signal_id,
+        label="shadow_signal_id",
+    )
+
     validation_id = validation_id or _new_id("validation")
     conn.execute(
         """
@@ -1457,7 +1515,7 @@ def record_validation_result(
     )
     lifecycle_event = "validation_pass" if pass_fail == "pass" else "validation_fail"
     transition = apply_opportunity_transition(lifecycle_event)
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_opportunities
         SET status = ?,
@@ -1473,7 +1531,8 @@ def record_validation_result(
             opportunity_id,
         ),
     )
-    conn.execute(
+    _require_single_row_update(cursor, "opportunity validation status")
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_shadow_signals
         SET status = ?
@@ -1481,6 +1540,7 @@ def record_validation_result(
         """,
         (transition.shadow_signal_status, shadow_signal_id),
     )
+    _require_single_row_update(cursor, "shadow signal validation status")
     if write_audit:
         _record_audit_event(
             conn,
@@ -1516,6 +1576,20 @@ def record_promotion_decision(
 ) -> str:
     if decision not in PROMOTION_DECISIONS:
         raise ValueError(f"Unsupported promotion decision: {decision}")
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_opportunities",
+        column_name="opportunity_id",
+        value=opportunity_id,
+        label="opportunity_id",
+    )
+    _require_row_exists(
+        conn,
+        table_name="poly_alpha_shadow_signals",
+        column_name="shadow_signal_id",
+        value=shadow_signal_id,
+        label="shadow_signal_id",
+    )
 
     promotion_id = promotion_id or _new_id("promotion")
     conn.execute(
@@ -1544,7 +1618,7 @@ def record_promotion_decision(
         ),
     )
     transition = apply_opportunity_transition(f"promotion_{decision}")
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_opportunities
         SET status = ?, updated_at = ?
@@ -1552,7 +1626,8 @@ def record_promotion_decision(
         """,
         (transition.opportunity_status, decided_at, opportunity_id),
     )
-    conn.execute(
+    _require_single_row_update(cursor, "opportunity promotion status")
+    cursor = conn.execute(
         """
         UPDATE poly_alpha_shadow_signals
         SET status = ?
@@ -1560,6 +1635,7 @@ def record_promotion_decision(
         """,
         (transition.shadow_signal_status, shadow_signal_id),
     )
+    _require_single_row_update(cursor, "shadow signal promotion status")
     if write_audit:
         _record_audit_event(
             conn,
@@ -2032,6 +2108,27 @@ def _json_dumps(value: Any) -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def _require_row_exists(
+    conn: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    value: str,
+    label: str,
+) -> None:
+    row = conn.execute(
+        f"SELECT 1 FROM {table_name} WHERE {column_name} = ? LIMIT 1",
+        (value,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown {label}: {value}")
+
+
+def _require_single_row_update(cursor: sqlite3.Cursor, label: str) -> None:
+    if cursor.rowcount != 1:
+        raise ValueError(f"Expected to update one {label}, updated {cursor.rowcount}")
 
 
 def _require_opportunity_status(status: str) -> None:
