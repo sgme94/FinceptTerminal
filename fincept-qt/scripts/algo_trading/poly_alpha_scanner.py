@@ -413,29 +413,35 @@ def _scan_decision(
     now: str,
 ) -> tuple[str, str, str]:
     spread = snapshot.get("spread")
-    if spread is None or spread > config.get("max_spread", DEFAULT_MAX_SPREAD):
+    if (
+        not _is_non_negative_finite_number(spread)
+        or spread > config.get("max_spread", DEFAULT_MAX_SPREAD)
+    ):
         return "ignore", "wide_spread", ""
 
     min_liquidity = config.get("min_liquidity", DEFAULT_MIN_LIQUIDITY)
     min_depth = config.get("min_top_of_book_depth", DEFAULT_MIN_TOP_OF_BOOK_DEPTH)
+    liquidity = snapshot.get("liquidity")
+    top_bid_depth = snapshot.get("top_bid_depth")
+    top_ask_depth = snapshot.get("top_ask_depth")
     if (
-        snapshot.get("liquidity") is None
-        or snapshot.get("liquidity") < min_liquidity
-        or snapshot.get("top_bid_depth") is None
-        or snapshot.get("top_bid_depth") < min_depth
-        or snapshot.get("top_ask_depth") is None
-        or snapshot.get("top_ask_depth") < min_depth
+        not _is_non_negative_finite_number(liquidity)
+        or liquidity < min_liquidity
+        or not _is_non_negative_finite_number(top_bid_depth)
+        or top_bid_depth < min_depth
+        or not _is_non_negative_finite_number(top_ask_depth)
+        or top_ask_depth < min_depth
     ):
         return "ignore", "low_liquidity", ""
 
     market_probability = _market_probability(snapshot)
     estimated_probability = snapshot.get("estimated_probability")
-    edge = _edge(estimated_probability, market_probability)
-    if (
-        not _is_probability(market_probability)
-        or not _is_probability(estimated_probability)
-        or not _is_finite_number(edge)
+    if not _is_probability(market_probability) or not _is_probability(
+        estimated_probability
     ):
+        return "watch", "insufficient_edge", ""
+    edge = _edge(estimated_probability, market_probability)
+    if not _is_finite_number(edge):
         return "watch", "insufficient_edge", ""
     min_edge = config.get("min_edge", DEFAULT_MIN_EDGE)
     if not edge > min_edge:
@@ -477,16 +483,26 @@ def _market_probability(snapshot: dict[str, Any]) -> float | None:
 
 
 def _edge(
-    estimated_probability: float | None,
-    market_probability: float | None,
+    estimated_probability: Any,
+    market_probability: Any,
 ) -> float | None:
-    if estimated_probability is None or market_probability is None:
+    if not _is_probability(estimated_probability) or not _is_probability(
+        market_probability
+    ):
         return None
     return estimated_probability - market_probability
 
 
 def _is_finite_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and math.isfinite(value)
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
+
+
+def _is_non_negative_finite_number(value: Any) -> bool:
+    return _is_finite_number(value) and value >= 0
 
 
 def _is_probability(value: Any) -> bool:

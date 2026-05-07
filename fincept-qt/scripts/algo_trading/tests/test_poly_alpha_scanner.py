@@ -431,6 +431,107 @@ def test_scan_qualifying_hint_requires_probability_and_edge_metrics():
     assert list_opportunities(conn) == []
 
 
+@pytest.mark.parametrize(
+    ("case", "invalid_snapshot_overrides", "expected_reason"),
+    [
+        ("nan_spread", {"spread": float("nan")}, "wide_spread"),
+        ("negative_spread", {"spread": -0.01}, "wide_spread"),
+        ("nan_liquidity", {"liquidity": float("nan")}, "low_liquidity"),
+        ("negative_liquidity", {"liquidity": -1.0}, "low_liquidity"),
+        ("nan_bid_depth", {"top_bid_depth": float("nan")}, "low_liquidity"),
+        ("negative_bid_depth", {"top_bid_depth": -1.0}, "low_liquidity"),
+        ("nan_ask_depth", {"top_ask_depth": float("nan")}, "low_liquidity"),
+        ("negative_ask_depth", {"top_ask_depth": -1.0}, "low_liquidity"),
+    ],
+)
+def test_scan_rejects_invalid_market_quality_without_rolling_back_scan(
+    case,
+    invalid_snapshot_overrides,
+    expected_reason,
+):
+    conn = _conn()
+    _seed_versions(conn)
+    invalid_snapshot = _snapshot(f"snap-{case}", f"market-{case}", qualifies=True)
+    invalid_snapshot.update(invalid_snapshot_overrides)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [
+            _document(f"doc-{case}", f"market-{case}"),
+            _document("doc-valid-after-invalid", "market-valid-after-invalid"),
+        ],
+        [
+            invalid_snapshot,
+            _snapshot(
+                "snap-valid-after-invalid",
+                "market-valid-after-invalid",
+                qualifies=True,
+            ),
+        ],
+        NOW,
+    )
+
+    results_by_market = {
+        row["venue_market_id"]: row for row in list_scan_results(conn, result["scan_run_id"])
+    }
+    assert results_by_market[f"market-{case}"]["decision"] == "ignore", case
+    assert results_by_market[f"market-{case}"]["reason"] == expected_reason, case
+    assert results_by_market[f"market-{case}"]["created_opportunity_id"] == "", case
+    assert results_by_market["market-valid-after-invalid"]["decision"] == (
+        "create_opportunity"
+    )
+    assert len(list_opportunities(conn)) == 1
+    assert list_scan_runs(conn)[0]["scanned_count"] == 2
+    assert list_scan_runs(conn)[0]["ignored_count"] == 1
+    assert list_scan_runs(conn)[0]["created_opportunity_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("case", "snapshot_overrides"),
+    [
+        ("string_market_probability", {"market_probability": "0.42"}),
+        ("string_estimated_probability", {"estimated_probability": "0.57"}),
+        ("bool_market_probability", {"market_probability": True}),
+        ("bool_estimated_probability", {"estimated_probability": True}),
+    ],
+)
+def test_scan_invalid_probability_types_do_not_crash_or_create_opportunity(
+    case,
+    snapshot_overrides,
+):
+    conn = _conn()
+    _seed_versions(conn)
+    snapshot = _snapshot(f"snap-{case}", f"market-{case}", qualifies=True)
+    snapshot.update(snapshot_overrides)
+
+    result = run_deterministic_scan(
+        conn,
+        "strat-v1",
+        {
+            "config_version": "cfg-v1",
+            "max_spread": 0.05,
+            "min_liquidity": 500.0,
+            "min_top_of_book_depth": 100.0,
+        },
+        [_document(f"doc-{case}", f"market-{case}")],
+        [snapshot],
+        NOW,
+    )
+
+    scan_result = list_scan_results(conn, result["scan_run_id"])[0]
+    assert scan_result["decision"] == "watch", case
+    assert scan_result["reason"] == "insufficient_edge", case
+    assert scan_result["created_opportunity_id"] == "", case
+    assert list_opportunities(conn) == [], case
+
+
 def test_deterministic_scan_rolls_back_writes_on_failure():
     conn = _conn()
     _seed_versions(conn)
@@ -690,6 +791,28 @@ def test_build_evidence_pack_requires_every_event_to_link_to_opportunity_market(
             [document_id],
             [snapshot_id],
             [event_good, event_other],
+            NOW,
+        )
+
+    assert list_evidence_packs(conn) == []
+
+
+def test_build_evidence_pack_rejects_event_link_without_confidence():
+    conn = _conn()
+    _seed_versions(conn)
+    opportunity_id = _insert_opportunity(conn, "opp-link-confidence", "market-link")
+    document_id = _insert_document(conn, _document("doc-link-confidence", "market-link"))
+    snapshot_id = _insert_snapshot(conn, _snapshot("snap-link-confidence", "market-link"))
+    event_id = _insert_event(conn, "event-link-confidence")
+    _link_event_to_market(conn, event_id, "market-link", link_confidence=None)
+
+    with pytest.raises(ValueError, match="does not link to opportunity market"):
+        build_evidence_pack(
+            conn,
+            opportunity_id,
+            [document_id],
+            [snapshot_id],
+            [event_id],
             NOW,
         )
 
