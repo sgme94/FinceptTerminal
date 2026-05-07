@@ -100,21 +100,27 @@ def run_signal_validation(conn, shadow_signal_id, config, now):
     ]
     lifecycle_pass_fail = "fail" if failure_reasons else "pass"
     lifecycle_failure_reason = failure_reasons[0] if failure_reasons else ""
-    validation_ids = []
-    for validation_type, template_result, event_metrics, _ in validation_rows:
-        validation_ids.append(
-            _record_result(
-                conn,
-                shadow_signal,
-                now,
-                validation_type=validation_type,
-                pass_fail=lifecycle_pass_fail,
-                failure_reason=lifecycle_failure_reason,
-                entry_snapshot=entry_snapshot,
-                template_result=template_result,
-                event_metrics=event_metrics,
-            )
+    validation_ids_by_type = {}
+    for validation_type, template_result, event_metrics, failure_reason in sorted(
+        validation_rows,
+        key=lambda row: bool(row[3]),
+    ):
+        row_pass_fail = "fail" if failure_reason else "pass"
+        validation_ids_by_type[validation_type] = _record_result(
+            conn,
+            shadow_signal,
+            now,
+            validation_type=validation_type,
+            pass_fail=row_pass_fail,
+            failure_reason=failure_reason,
+            entry_snapshot=entry_snapshot,
+            template_result=template_result,
+            event_metrics=event_metrics,
         )
+    validation_ids = [
+        validation_ids_by_type[validation_type]
+        for validation_type, _, _, _ in validation_rows
+    ]
 
     return {
         "validation_ids": validation_ids,

@@ -467,8 +467,13 @@ def test_validation_keeps_lifecycle_failed_when_one_template_fails_before_passes
     rows = {row["validation_type"]: row for row in list_validation_results(conn)}
     assert result["pass_fail"] == "fail"
     assert result["failure_reason"] == "late_information"
+    assert rows["fixed_horizon"]["pass_fail"] == "fail"
     assert rows["fixed_horizon"]["failure_reason"] == "late_information"
+    assert rows["target_stop"]["pass_fail"] == "pass"
+    assert rows["target_stop"]["failure_reason"] == ""
     assert rows["target_stop"]["market_move_after_signal"] == pytest.approx(0.16)
+    assert rows["resolution_expiry"]["pass_fail"] == "pass"
+    assert rows["resolution_expiry"]["failure_reason"] == ""
     assert rows["resolution_expiry"]["market_move_after_signal"] == pytest.approx(0.20)
     assert list_opportunities(conn)[0]["status"] == "rejected"
     assert list_opportunities(conn)[0]["primary_reason"] == "late_information"
