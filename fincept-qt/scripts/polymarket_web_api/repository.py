@@ -52,6 +52,10 @@ def is_past_timestamp(value: str | None, now: str) -> bool:
     return expires_at is not None and now_dt is not None and expires_at <= now_dt
 
 
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def find_proposal(conn: sqlite3.Connection, deployment_id: str, proposal_id: str) -> dict[str, Any] | None:
     return next((item for item in list_trade_proposals(conn, deployment_id) if item["proposal_id"] == proposal_id), None)
 
@@ -86,6 +90,7 @@ class PolymarketRepository:
 
     def list_proposals(self, deployment_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
+            expire_past_ttl_proposals(conn, deployment_id, utc_now())
             return list_trade_proposals(conn, deployment_id)
 
     def list_candidates(self, deployment_id: str) -> list[dict[str, Any]]:
@@ -433,3 +438,38 @@ class PolymarketRepository:
                     now=now,
                 )
             return event_id
+
+
+def expire_past_ttl_proposals(conn: sqlite3.Connection, deployment_id: str, now: str) -> None:
+    for proposal in list_trade_proposals(conn, deployment_id):
+        if proposal["status"] != "proposed" or not is_past_timestamp(proposal.get("expires_at"), now):
+            continue
+        after = dict(proposal)
+        after["status"] = "expired"
+        updated = update_trade_proposal_status(
+            conn,
+            proposal["proposal_id"],
+            "expired",
+            proposal.get("decided_by") or "",
+            proposal.get("decided_at") or "",
+            proposal.get("decision_reason") or "",
+            deployment_id=deployment_id,
+            expected_status="proposed",
+        )
+        if updated:
+            record_audit_event(
+                conn,
+                deployment_id=deployment_id,
+                strategy_id=proposal.get("strategy_id") or "",
+                actor_type="system",
+                actor_id="polymarket_web_api",
+                action="proposal_expired",
+                entity_type="proposal",
+                entity_id=proposal["proposal_id"],
+                before=proposal,
+                after=after,
+                result="failed",
+                reason="proposal_expired",
+                request_id="",
+                now=now,
+            )

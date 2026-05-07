@@ -592,6 +592,30 @@ def test_approve_past_ttl_proposed_proposal_marks_expired_and_returns_409(tmp_pa
     assert event["reason"] == "proposal_expired"
 
 
+def test_proposals_route_marks_past_ttl_proposed_proposal_expired(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    insert_proposal(conn, proposal_id="read-expired-1", expires_at="2020-01-01T00:00:00Z")
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    response = client.get("/api/proposals?deployment_id=dep-1")
+
+    assert response.status_code == 200
+    assert response.json()["proposals"][0]["status"] == "expired"
+
+    events = client.get("/api/audit?deployment_id=dep-1").json()["events"]
+    assert len(events) == 1
+    assert events[0]["action"] == "proposal_expired"
+    assert events[0]["entity_id"] == "read-expired-1"
+    assert events[0]["before"]["status"] == "proposed"
+    assert events[0]["after"]["status"] == "expired"
+    assert events[0]["result"] == "failed"
+    assert events[0]["reason"] == "proposal_expired"
+
+
 def test_cross_deployment_approve_and_reject_return_404_without_changing_original(tmp_path):
     db_path = tmp_path / "bot.db"
     conn = sqlite3.connect(db_path)

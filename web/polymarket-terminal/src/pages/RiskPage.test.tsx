@@ -53,6 +53,8 @@ describe("RiskPage", () => {
     const client = await import("../api/client");
     const proposed: TradeProposal = {
       ...mockTradeProposals[0],
+      source: "api",
+      stale: false,
       id: "prop-dep-1",
       deploymentId: "dep-1",
       status: "proposed"
@@ -100,6 +102,8 @@ describe("RiskPage", () => {
     vi.mocked(client.getTradeProposals).mockResolvedValue([
       {
         ...mockTradeProposals[0],
+        source: "api",
+        stale: false,
         id: "prop-refresh",
         deploymentId: "dep-refresh",
         status: "proposed"
@@ -124,6 +128,8 @@ describe("RiskPage", () => {
     vi.mocked(client.getTradeProposals).mockResolvedValue([
       {
         ...mockTradeProposals[0],
+        source: "api",
+        stale: false,
         id: "prop-error",
         deploymentId: "dep-error",
         status: "proposed"
@@ -137,5 +143,26 @@ describe("RiskPage", () => {
     await user.click(screen.getByRole("button", { name: "Approve prop-error" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Request failed: 409");
+  });
+
+  it("does not allow mock or stale proposed rows to drive approval actions", async () => {
+    const client = await import("../api/client");
+    vi.mocked(client.getTradeProposals).mockResolvedValue([
+      {
+        ...mockTradeProposals[0],
+        id: "prop-stale",
+        deploymentId: "dep-stale",
+        status: "proposed",
+        source: "mock",
+        stale: true
+      }
+    ]);
+
+    render(<RiskPage />);
+
+    expect(await screen.findByText("prop-stale")).toBeInTheDocument();
+    expect(screen.getByText("stale data")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve prop-stale" })).not.toBeInTheDocument();
+    expect(client.approveTradeProposal).not.toHaveBeenCalled();
   });
 });

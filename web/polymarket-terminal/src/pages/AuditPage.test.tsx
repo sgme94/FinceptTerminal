@@ -1,14 +1,33 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditEvent, PaperTrade, SignalRow, TradeProposal } from "../api/types";
-import { getAuditEvents, getPaperTrades, getSignals, getTradeProposals } from "../api/client";
+import type {
+  AuditEvent,
+  MarketCandidate,
+  PaperPosition,
+  PaperTrade,
+  SignalRow,
+  SkipRow,
+  TradeProposal
+} from "../api/types";
+import {
+  getAuditEvents,
+  getCandidates,
+  getPaperPositions,
+  getPaperTrades,
+  getSignals,
+  getSkips,
+  getTradeProposals
+} from "../api/client";
 import { AuditPage } from "./AuditPage";
 
 vi.mock("../api/client", () => ({
   getAuditEvents: vi.fn(),
+  getCandidates: vi.fn(),
+  getPaperPositions: vi.fn(),
   getPaperTrades: vi.fn(),
   getSignals: vi.fn(),
+  getSkips: vi.fn(),
   getTradeProposals: vi.fn()
 }));
 
@@ -120,11 +139,54 @@ const signals: SignalRow[] = [
   }
 ];
 
+const positions: PaperPosition[] = [
+  {
+    source: "api",
+    id: "position-asset-1",
+    deploymentId: "dep-test",
+    assetId: "asset-1",
+    size: 10,
+    avgPrice: 0.58,
+    exposureUsd: 5.8,
+    realizedPnl: 0,
+    updatedAt: "2026-05-06T10:22:00.000Z"
+  }
+];
+
+const candidates: MarketCandidate[] = [
+  {
+    source: "api",
+    id: "mkt-candidate",
+    question: "mkt-candidate",
+    category: "yes",
+    probability: 58,
+    volumeUsd: 1200,
+    liquidityUsd: 700,
+    spreadBps: 0,
+    closesAt: "2026-05-06T10:01:00.000Z"
+  }
+];
+
+const skips: SkipRow[] = [
+  {
+    source: "api",
+    id: "skip-1",
+    marketId: "mkt-skip",
+    assetId: "asset-skip",
+    reason: "stale_orderbook",
+    detail: "quote too old",
+    createdAt: "2026-05-06T10:03:00.000Z"
+  }
+];
+
 describe("AuditPage", () => {
   beforeEach(() => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents);
+    vi.mocked(getCandidates).mockResolvedValue(candidates);
+    vi.mocked(getPaperPositions).mockResolvedValue(positions);
     vi.mocked(getPaperTrades).mockResolvedValue(trades);
     vi.mocked(getSignals).mockResolvedValue(signals);
+    vi.mocked(getSkips).mockResolvedValue(skips);
     vi.mocked(getTradeProposals).mockResolvedValue(proposals);
   });
 
@@ -146,6 +208,9 @@ describe("AuditPage", () => {
 
     expect(screen.getByRole("tab", { name: /trades/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /signals/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /positions/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /candidates/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /skips/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /proposals/i })).toBeInTheDocument();
     expect(screen.getAllByText(/append-only/i).length).toBeGreaterThan(0);
   });
@@ -191,5 +256,24 @@ describe("AuditPage", () => {
     await user.click(screen.getByRole("tab", { name: /signals/i }));
 
     expect(screen.getByText("signal-1")).toBeInTheDocument();
+  });
+
+  it("renders positions, candidates, and skips audit projections", async () => {
+    const user = userEvent.setup();
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /positions/i }));
+    expect(screen.getByText("position-asset-1")).toBeInTheDocument();
+    expect(screen.getByText("asset-1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /candidates/i }));
+    expect(screen.getAllByText("mkt-candidate").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("tab", { name: /skips/i }));
+    expect(screen.getByText("skip-1")).toBeInTheDocument();
+    expect(screen.getByText("stale_orderbook")).toBeInTheDocument();
   });
 });

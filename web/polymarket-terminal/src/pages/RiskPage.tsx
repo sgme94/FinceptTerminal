@@ -82,6 +82,10 @@ function proposalTone(status: TradeProposal["status"]): "ok" | "warn" | "danger"
   return "neutral";
 }
 
+function canActOnProposal(proposal: TradeProposal) {
+  return proposal.status === "proposed" && proposal.source === "api" && proposal.stale !== true;
+}
+
 type HistoryRow = {
   id: string;
   type: "skip" | "reject";
@@ -238,7 +242,7 @@ export function RiskPage() {
       key: "actions",
       header: "Actions",
       render: (row) =>
-        row.status === "proposed" ? (
+        canActOnProposal(row) ? (
           <div className="table-action-row">
             <TerminalButton aria-label={`Approve ${row.id}`} tone="accent" onClick={() => void handleApprove(row)}>
               Approve
@@ -247,6 +251,8 @@ export function RiskPage() {
               Reject
             </TerminalButton>
           </div>
+        ) : row.status === "proposed" ? (
+          <span className="workspace-kicker">stale data</span>
         ) : (
           <span className="workspace-kicker">Closed</span>
         )

@@ -1,11 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { getAuditEvents, getPaperTrades, getSignals, getTradeProposals } from "../api/client";
-import type { AuditEvent, PaperTrade, SignalRow, TradeProposal } from "../api/types";
-import { mockAuditEvents, mockPaperTrades, mockSignals, mockTradeProposals } from "../data/mockTerminalData";
+import {
+  getAuditEvents,
+  getCandidates,
+  getPaperPositions,
+  getPaperTrades,
+  getSignals,
+  getSkips,
+  getTradeProposals
+} from "../api/client";
+import type {
+  AuditEvent,
+  MarketCandidate,
+  PaperPosition,
+  PaperTrade,
+  SignalRow,
+  SkipRow,
+  TradeProposal
+} from "../api/types";
+import {
+  mockAuditEvents,
+  mockMarketCandidates,
+  mockPaperPositions,
+  mockPaperTrades,
+  mockSignals,
+  mockSkips,
+  mockTradeProposals
+} from "../data/mockTerminalData";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { StatusPill } from "../components/ui/StatusPill";
 
-type AuditTab = "trades" | "signals" | "proposals";
+type AuditTab = "trades" | "signals" | "positions" | "candidates" | "skips" | "proposals";
 
 function statusTransition(event: AuditEvent) {
   const beforeStatus =
@@ -62,6 +86,50 @@ const tradeColumns: Array<DenseDataTableColumn<PaperTrade>> = [
   }
 ];
 
+const positionColumns: Array<DenseDataTableColumn<PaperPosition>> = [
+  {
+    key: "id",
+    header: "Position",
+    render: (row) => row.id
+  },
+  {
+    key: "asset",
+    header: "Asset",
+    render: (row) => row.assetId
+  },
+  {
+    key: "size",
+    header: "Size",
+    align: "right",
+    render: (row) => row.size.toFixed(2)
+  },
+  {
+    key: "exposure",
+    header: "Exposure",
+    align: "right",
+    render: (row) => row.exposureUsd.toFixed(2)
+  }
+];
+
+const candidateColumns: Array<DenseDataTableColumn<MarketCandidate>> = [
+  {
+    key: "id",
+    header: "Candidate",
+    render: (row) => row.id
+  },
+  {
+    key: "question",
+    header: "Question",
+    render: (row) => row.question
+  },
+  {
+    key: "liquidity",
+    header: "Liquidity",
+    align: "right",
+    render: (row) => row.liquidityUsd.toFixed(0)
+  }
+];
+
 const signalColumns: Array<DenseDataTableColumn<SignalRow>> = [
   {
     key: "id",
@@ -81,11 +149,32 @@ const signalColumns: Array<DenseDataTableColumn<SignalRow>> = [
   }
 ];
 
+const skipColumns: Array<DenseDataTableColumn<SkipRow>> = [
+  {
+    key: "id",
+    header: "Skip",
+    render: (row) => row.id
+  },
+  {
+    key: "market",
+    header: "Market",
+    render: (row) => row.marketId
+  },
+  {
+    key: "reason",
+    header: "Reason",
+    render: (row) => row.reason
+  }
+];
+
 export function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[]>(mockAuditEvents);
   const [proposals, setProposals] = useState<TradeProposal[]>(mockTradeProposals);
   const [trades, setTrades] = useState<PaperTrade[]>(mockPaperTrades);
+  const [positions, setPositions] = useState<PaperPosition[]>(mockPaperPositions);
+  const [candidates, setCandidates] = useState<MarketCandidate[]>(mockMarketCandidates);
   const [signals, setSignals] = useState<SignalRow[]>(mockSignals);
+  const [skips, setSkips] = useState<SkipRow[]>(mockSkips);
   const [deploymentFilter, setDeploymentFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -95,13 +184,24 @@ export function AuditPage() {
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([getAuditEvents(), getTradeProposals(), getPaperTrades(), getSignals()])
-      .then(([nextEvents, nextProposals, nextTrades, nextSignals]) => {
+    Promise.all([
+      getAuditEvents(),
+      getTradeProposals(),
+      getPaperTrades(),
+      getPaperPositions(),
+      getCandidates(),
+      getSignals(),
+      getSkips()
+    ])
+      .then(([nextEvents, nextProposals, nextTrades, nextPositions, nextCandidates, nextSignals, nextSkips]) => {
         if (isMounted) {
           setEvents(nextEvents);
           setProposals(nextProposals);
           setTrades(nextTrades);
+          setPositions(nextPositions);
+          setCandidates(nextCandidates);
           setSignals(nextSignals);
+          setSkips(nextSkips);
         }
       })
       .finally(() => {
@@ -142,7 +242,17 @@ export function AuditPage() {
       ),
     [deploymentFilter, trades]
   );
+  const filteredPositions = useMemo(
+    () =>
+      positions.filter(
+        (position) =>
+          deploymentFilter.trim() === "" || position.deploymentId.includes(deploymentFilter.trim())
+      ),
+    [deploymentFilter, positions]
+  );
+  const filteredCandidates = useMemo(() => candidates, [candidates]);
   const filteredSignals = useMemo(() => signals, [signals]);
+  const filteredSkips = useMemo(() => skips, [skips]);
 
   return (
     <section className="workspace-panel page-stack" aria-busy={isLoading}>
@@ -202,8 +312,8 @@ export function AuditPage() {
         ))}
       </ul>
 
-      <div className="tab-row" role="tablist" aria-label="Trades signals proposals">
-        {(["trades", "signals", "proposals"] as AuditTab[]).map((tab) => (
+      <div className="tab-row" role="tablist" aria-label="Audit projections">
+        {(["trades", "signals", "positions", "candidates", "skips", "proposals"] as AuditTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -235,6 +345,39 @@ export function AuditPage() {
           getRowKey={(row) => row.id}
           emptyTitle="No signals"
           emptyDescription="No signal rows are available."
+        />
+      ) : null}
+
+      {activeTab === "positions" ? (
+        <DenseDataTable
+          caption="Position audit rows"
+          columns={positionColumns}
+          rows={filteredPositions}
+          getRowKey={(row) => row.id}
+          emptyTitle="No positions"
+          emptyDescription="No paper position rows are available."
+        />
+      ) : null}
+
+      {activeTab === "candidates" ? (
+        <DenseDataTable
+          caption="Candidate audit rows"
+          columns={candidateColumns}
+          rows={filteredCandidates}
+          getRowKey={(row) => row.id}
+          emptyTitle="No candidates"
+          emptyDescription="No candidate rows are available."
+        />
+      ) : null}
+
+      {activeTab === "skips" ? (
+        <DenseDataTable
+          caption="Skip audit rows"
+          columns={skipColumns}
+          rows={filteredSkips}
+          getRowKey={(row) => row.id}
+          emptyTitle="No skips"
+          emptyDescription="No skip rows are available."
         />
       ) : null}
 
