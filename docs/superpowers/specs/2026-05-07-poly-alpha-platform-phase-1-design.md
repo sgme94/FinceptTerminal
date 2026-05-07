@@ -194,17 +194,26 @@ Shadow mode records what the platform would have done without entering the Risk 
 
 A shadow signal can later be:
 
-- active
+- shadow
 - validated
 - rejected
 - promoted
 - expired
+
+`shadow` is the initial persisted state. The F3 Signals filter must use the same `shadow` value, not a UI-only alias such as `active`.
 
 ### Signal-Level Validation Engine
 
 Phase 1 must implement signal-level validation.
 
 The validation anchor is the shadow signal creation time. The engine simulates whether the signal would have been tradable using data available at that time.
+
+Phase 1 validation data sources:
+
+- Historical Polymarket token prices should come from ingested CLOB/Data API price history documents or existing official-source caches when they include source metadata and fetch time.
+- Order book, spread, top-of-book depth, and liquidity-at-entry should come from a new persisted snapshot store, `poly_alpha_market_snapshots`, populated by scheduled scans and manual research tasks.
+- If no historical order book snapshot exists at or before the signal creation time within the configured freshness window, validation must fail with `missing_market_snapshot` instead of fetching a later book and treating it as historical.
+- External BTC/ETH/OHLCV context should come from ingested price-market documents with `observed_at` timestamps.
 
 Phase 1 exit templates:
 
@@ -229,11 +238,14 @@ Promotion gate defaults:
 
 - at least 30 historical signals or 90 days of historical coverage
 - cost-adjusted net return greater than zero
-- acceptable maximum drawdown
-- reasonable hit rate and payoff ratio
+- maximum drawdown no worse than `-20%`
+- hit rate at least `52%` unless payoff ratio is at least `1.5`
+- payoff ratio at least `1.1` unless hit rate is at least `60%`
 - no obvious lookahead bias or survivorship bias
 - no unresolved Critic blocker
 - Risk Reviewer approval
+
+These defaults must live in a versioned Poly Alpha configuration object. Implementation may expose them as settings later, but Phase 1 tests should assert the defaults above so promotion behavior is deterministic.
 
 Promotion outcomes:
 
@@ -414,6 +426,46 @@ Strategy families:
 - `cross_market_probability`
 - `resolution_rules`
 
+Status values:
+
+- `shadow`
+- `validated`
+- `rejected`
+- `promoted`
+- `expired`
+
+The API and UI must use these exact values.
+
+### `poly_alpha_market_snapshots`
+
+Stores official-source market data snapshots used by validation.
+
+Required fields:
+
+```text
+snapshot_id
+market_id
+condition_id
+asset_id
+source_api
+observed_at
+fetched_at
+payload_hash
+best_bid
+best_ask
+spread
+top_bid_depth
+top_ask_depth
+mid_price
+last_trade_price
+liquidity
+volume
+raw_payload_json
+created_at
+```
+
+The validation engine may only use snapshots with `observed_at <= shadow_signal.created_at` and within the configured freshness window. Missing snapshots must produce an explicit failed validation result.
+
 ### `poly_alpha_validation_results`
 
 Stores validation results for one shadow signal and one exit template.
@@ -423,6 +475,8 @@ Required fields:
 ```text
 validation_id
 shadow_signal_id
+entry_snapshot_id
+exit_snapshot_id
 validation_type
 entry_price
 exit_price
@@ -482,6 +536,7 @@ Required audit actions:
 - `validation_completed`
 - `promotion_approved`
 - `promotion_rejected`
+- `promotion_watch`
 - `proposal_created`
 - `proposal_approved`
 - `proposal_rejected`
@@ -743,4 +798,3 @@ These are intentionally deferred and must not block Phase 1 planning:
 - live trading
 - autonomous approval
 - portfolio-level live capital allocation
-
