@@ -139,6 +139,7 @@ Opportunity statuses:
 - `proposed`: created a paper proposal.
 - `approved`: proposal was manually approved.
 - `filled`: paper fill was recorded.
+- `skipped`: proposal was approved, but the final order book/freshness/risk/TTL/liquidity recheck blocked the paper fill.
 - `expired`: opportunity, shadow signal, or proposal is no longer actionable.
 
 Shadow signal statuses:
@@ -154,6 +155,28 @@ Promotion decisions:
 - `watch`
 - `promote`
 - `reject`
+
+Required opportunity transition mapping:
+
+| Event | Opportunity Status | Shadow Signal Status | Promotion Decision |
+| --- | --- | --- | --- |
+| scanner ignores candidate before opportunity creation | no opportunity; write scan result | n/a | n/a |
+| opportunity discovered but not researched | `ignored` or `watch` | n/a | n/a |
+| evidence pack passes Exploration Gate | `watch` | n/a | n/a |
+| shadow signal created | `shadow` | `shadow` | n/a |
+| validation passes but not promoted | `validated` | `validated` | n/a |
+| validation fails | `rejected` | `rejected` | n/a |
+| promotion decision is `watch` | `validated` | `validated` | `watch` |
+| promotion decision is `reject` | `rejected` | `rejected` | `reject` |
+| promotion decision is `promote` | `promoted` | `promoted` | `promote` |
+| paper proposal created | `proposed` | `promoted` | `promote` |
+| manual proposal rejection | `rejected` | `promoted` | `promote` |
+| manual proposal approval | `approved` | `promoted` | `promote` |
+| post-approval recheck skips paper fill | `skipped` | `promoted` | `promote` |
+| paper fill recorded | `filled` | `promoted` | `promote` |
+| opportunity/proposal TTL expires | `expired` | `expired` when signal expired, otherwise unchanged | unchanged |
+
+F3 and F7 must use this mapping in tests so UI filters and backend lifecycle behavior stay compatible.
 
 ### Deterministic Opportunity Discovery
 
@@ -312,12 +335,20 @@ Each template must be reported separately. A single combined return is not enoug
 
 Only promoted signals can enter the existing paper proposal queue.
 
+Exploration Gate is a real pre-shadow quality gate. It decides whether an opportunity receives an evidence pack and can proceed to agent review/shadow signal creation. It must write an exploration decision and audit event.
+
 Exploration gate defaults:
 
 - at least 10 historical events or signal samples
 - complete source, fetched time, and payload hash metadata
 - structured thesis, evidence, and counter-evidence
 - metrics recorded, but profitability not yet required
+
+Exploration outcomes:
+
+- `pass`: opportunity can proceed to agent review and shadow signal creation.
+- `watch`: opportunity remains watchlisted but should not create a shadow signal yet.
+- `reject`: opportunity is rejected before shadow signal creation.
 
 Promotion gate defaults:
 
@@ -379,6 +410,7 @@ Required fields:
 config_version_id
 name
 validation_freshness_window_sec
+min_exploration_samples
 min_promotion_samples
 min_promotion_history_days
 max_drawdown_threshold
@@ -393,6 +425,7 @@ is_active
 Phase 1 default values:
 
 - `validation_freshness_window_sec = 300`
+- `min_exploration_samples = 10`
 - `min_promotion_samples = 30`
 - `min_promotion_history_days = 90`
 - `max_drawdown_threshold = -0.20`
@@ -486,6 +519,7 @@ Opportunity statuses:
 - `proposed`
 - `approved`
 - `filled`
+- `skipped`
 - `expired`
 
 Primary reason codes:
@@ -500,6 +534,37 @@ Primary reason codes:
 - `missing_market_snapshot`
 - `capacity_too_small`
 - `approval_latency_risk`
+
+### `poly_alpha_scan_results`
+
+Stores deterministic scan outcomes, including candidates that do not become opportunities.
+
+Required fields:
+
+```text
+scan_result_id
+scan_run_id
+strategy_version_id
+venue
+venue_market_id
+venue_contract_id
+outcome_id
+decision
+reason
+source_snapshot_ids_json
+source_document_ids_json
+created_opportunity_id
+observed_at
+created_at
+```
+
+Decision values:
+
+- `ignore`
+- `watch`
+- `create_opportunity`
+
+If `decision = ignore`, `reason` must use a primary reason code where practical. This table is the storage target for pre-opportunity no-trade attribution.
 
 ### `poly_alpha_evidence_packs`
 
@@ -523,6 +588,31 @@ payload_hash
 ```
 
 Agents must cite an evidence pack. Agent findings that reference uncaptured facts are invalid.
+
+### `poly_alpha_exploration_decisions`
+
+Stores the pre-shadow Exploration Gate result.
+
+Required fields:
+
+```text
+exploration_id
+opportunity_id
+evidence_pack_id
+strategy_version_id
+decision
+reason
+metrics_json
+created_at
+```
+
+Decision values:
+
+- `pass`
+- `watch`
+- `reject`
+
+Exploration `watch` keeps the opportunity status at `watch`. Exploration `reject` sets opportunity status to `rejected`. Only `pass` can proceed to agent review/shadow signal creation.
 
 ### `poly_alpha_documents`
 
@@ -818,6 +908,9 @@ Required audit actions:
 - `opportunity_discovered`
 - `document_ingested`
 - `evidence_pack_created`
+- `exploration_passed`
+- `exploration_watch`
+- `exploration_rejected`
 - `event_linked`
 - `research_started`
 - `research_completed`
@@ -832,12 +925,14 @@ Required audit actions:
 - `proposal_approved`
 - `proposal_rejected`
 - `paper_fill_recorded`
+- `paper_fill_skipped`
 
 A promoted proposal should be traceable back to:
 
 - strategy version
 - opportunity
 - evidence pack
+- exploration decision
 - source documents
 - event candidate
 - market link
@@ -847,7 +942,7 @@ A promoted proposal should be traceable back to:
 - validation results
 - promotion decision
 - proposal decision
-- paper fill or skip
+- paper fill or explicit paper skip
 
 ## Web Terminal Mapping
 
@@ -1018,7 +1113,9 @@ Suggested API groups:
 - `/api/poly-alpha/source-sets`
 - `/api/poly-alpha/strategy-versions`
 - `/api/poly-alpha/opportunities`
+- `/api/poly-alpha/scan-results`
 - `/api/poly-alpha/evidence-packs`
+- `/api/poly-alpha/exploration-decisions`
 - `/api/poly-alpha/documents`
 - `/api/poly-alpha/events`
 - `/api/poly-alpha/links`
@@ -1033,6 +1130,7 @@ Control endpoints must be paper-safe:
 - trigger deterministic scheduled scan
 - trigger manual research task
 - build evidence pack
+- decide exploration gate
 - run signal validation
 - decide promotion
 - create paper proposal from promoted signal
@@ -1048,7 +1146,10 @@ Required coverage:
 - versioned config defaults are deterministic
 - source set versions attach to evidence packs and strategy versions
 - strategy version IDs attach to research runs, signals, validations, and promotions
-- opportunity lifecycle supports ignored/watch/shadow/validated/rejected/promoted/proposed/approved/filled/expired
+- opportunity lifecycle supports ignored/watch/shadow/validated/rejected/promoted/proposed/approved/filled/skipped/expired
+- opportunity lifecycle transition table is enforced
+- scan results store pre-opportunity no-trade attribution
+- exploration decisions support pass/watch/reject and update opportunity status
 - document ingestion deduplicates by payload hash
 - timestamp semantics preserve `published_at`, `fetched_at`, and `observed_at`
 - evidence packs include cited documents and snapshots
@@ -1062,6 +1163,7 @@ Required coverage:
 - promotion gate supports `promote`, `reject`, and `watch`
 - promotion gate evaluates prediction quality and trading quality separately
 - proposal creation only happens after promotion
+- post-approval paper fill skips are persisted and audited
 - shadow signals do not appear in the Risk queue
 - paper-only boundaries reject live trading fields
 - audit chain is complete
@@ -1128,6 +1230,8 @@ All ideas start in shadow mode. Only promoted signals enter F4 Risk.
 ### Missing No-Trade Attribution
 
 No-trade outcomes are useful research data. Scans and research runs that do not create shadow signals must still record a primary reason code where practical.
+
+Pre-opportunity no-trade outcomes must be stored in `poly_alpha_scan_results`. Post-approval paper skips must update the opportunity to `skipped`, write `paper_fill_skipped`, and preserve the skip reason in F8 Audit.
 
 ### Resolution Ambiguity
 
