@@ -82,4 +82,25 @@ describe("MarketsPage", () => {
     expect(screen.getAllByText("mkt-btc-100k").length).toBeGreaterThan(0);
     expect(screen.getByText("Bitcoin above 100k on May 31?")).toBeInTheDocument();
   });
+
+  it("queues a Poly Alpha market handoff to research/Cockpit without changing the selected market", async () => {
+    const user = userEvent.setup();
+
+    render(<MarketsPage />);
+
+    expect(await screen.findByRole("heading", { name: "Markets" })).toBeInTheDocument();
+    expect(screen.getByTestId("probability-chart")).toHaveAttribute(
+      "aria-label",
+      "mkt-fed-2026 probability history"
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send mkt-btc-100k to research/Cockpit" }));
+
+    expect(screen.getByText("Sent to Cockpit: mkt-btc-100k")).toBeInTheDocument();
+    expect(screen.getByText("queued for cockpit")).toBeInTheDocument();
+    expect(screen.getByTestId("probability-chart")).toHaveAttribute(
+      "aria-label",
+      "mkt-fed-2026 probability history"
+    );
+  });
 });

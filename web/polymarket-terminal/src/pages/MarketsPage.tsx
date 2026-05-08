@@ -69,6 +69,8 @@ export function MarketsPage() {
   const [selectedMarketId, setSelectedMarketId] = useState(mockTerminalSnapshot.markets[0]?.id ?? "");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [searchFilter, setSearchFilter] = useState("");
+  const [cockpitHandoffMarketIds, setCockpitHandoffMarketIds] = useState<string[]>([]);
+  const [lastCockpitHandoffMarketId, setLastCockpitHandoffMarketId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -149,6 +151,22 @@ export function MarketsPage() {
       })),
     [polyAlphaEvidencePacks, polyAlphaLinks, polyAlphaMarketSnapshots, polyAlphaOpportunities]
   );
+  const cockpitHandoffSet = useMemo(() => new Set(cockpitHandoffMarketIds), [cockpitHandoffMarketIds]);
+
+  function handleCockpitHandoff(opportunity: PolyAlphaOpportunity) {
+    setCockpitHandoffMarketIds((current) =>
+      current.includes(opportunity.venueMarketId) ? current : [...current, opportunity.venueMarketId]
+    );
+    setLastCockpitHandoffMarketId(opportunity.venueMarketId);
+    window.dispatchEvent(
+      new CustomEvent("poly-alpha-cockpit-handoff", {
+        detail: {
+          opportunityId: opportunity.id,
+          venueMarketId: opportunity.venueMarketId
+        }
+      })
+    );
+  }
 
   const candidateColumns: Array<DenseDataTableColumn<MarketCandidate>> = [
     {
@@ -234,12 +252,17 @@ export function MarketsPage() {
         row.links.length > 0 ? formatLinkConfidence(Math.max(...row.links.map((link) => link.linkConfidence))) : ""
     },
     {
+      key: "handoff",
+      header: "Handoff",
+      render: (row) => (cockpitHandoffSet.has(row.opportunity.venueMarketId) ? "queued for cockpit" : "")
+    },
+    {
       key: "action",
       header: "Action",
       render: (row) => (
         <TerminalButton
           aria-label={`Send ${row.opportunity.venueMarketId} to research/Cockpit`}
-          onClick={() => setSelectedMarketId(row.opportunity.venueMarketId)}
+          onClick={() => handleCockpitHandoff(row.opportunity)}
         >
           Research/Cockpit
         </TerminalButton>
@@ -328,6 +351,9 @@ export function MarketsPage() {
       </div>
 
       <div className="page-section">
+        {lastCockpitHandoffMarketId ? (
+          <p className="page-warning">Sent to Cockpit: {lastCockpitHandoffMarketId}</p>
+        ) : null}
         <h2>Poly Alpha market links</h2>
         <DenseDataTable
           caption="Poly Alpha market links"

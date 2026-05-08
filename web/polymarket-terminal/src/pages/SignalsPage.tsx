@@ -17,6 +17,7 @@ import type {
 } from "../api/types";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { StatusPill } from "../components/ui/StatusPill";
+import { TerminalButton } from "../components/ui/TerminalButton";
 import {
   mockPolyAlphaPromotionDecisions,
   mockPolyAlphaShadowSignals,
@@ -51,6 +52,8 @@ type PolyAlphaSignalRow = PolyAlphaShadowSignal & {
   validation?: PolyAlphaValidationResult;
   promotion?: PolyAlphaPromotionDecision;
 };
+type ShadowStatusFilter = "all" | PolyAlphaShadowSignal["status"];
+type PromotionDecisionFilter = "all" | PolyAlphaPromotionDecision["decision"];
 
 export function SignalsPage() {
   const [snapshot, setSnapshot] = useState<TerminalStatus>(mockTerminalSnapshot);
@@ -61,6 +64,8 @@ export function SignalsPage() {
     useState<PolyAlphaValidationResult[]>(mockPolyAlphaValidationResults);
   const [polyAlphaPromotions, setPolyAlphaPromotions] =
     useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
+  const [shadowStatusFilter, setShadowStatusFilter] = useState<ShadowStatusFilter>("all");
+  const [promotionDecisionFilter, setPromotionDecisionFilter] = useState<PromotionDecisionFilter>("all");
   const [selectedSignalId, setSelectedSignalId] = useState(mockTerminalSnapshot.signals[0]?.id ?? "");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -130,6 +135,17 @@ export function SignalsPage() {
         promotionDecisions: ["watch", "promote", "reject"]
       }),
     []
+  );
+  const filteredPolyAlphaRows = useMemo(
+    () =>
+      polyAlphaRows.filter((row) => {
+        const matchesShadowStatus = shadowStatusFilter === "all" || row.status === shadowStatusFilter;
+        const matchesPromotionDecision =
+          promotionDecisionFilter === "all" || row.promotion?.decision === promotionDecisionFilter;
+
+        return matchesShadowStatus && matchesPromotionDecision;
+      }),
+    [polyAlphaRows, promotionDecisionFilter, shadowStatusFilter]
   );
 
   const signalColumns: Array<DenseDataTableColumn<SignalRow>> = [
@@ -293,7 +309,7 @@ export function SignalsPage() {
           <DenseDataTable
             caption="Poly Alpha shadow signals"
             columns={polyAlphaColumns}
-            rows={polyAlphaRows}
+            rows={filteredPolyAlphaRows}
             getRowKey={(row) => row.id}
             emptyTitle="No Poly Alpha shadow signals"
             emptyDescription="No shadow signals are available."
@@ -304,8 +320,22 @@ export function SignalsPage() {
           <div className="page-section">
             <h2>Shadow status filters</h2>
             <div className="detail-badges" aria-label="Shadow status filters">
+              <TerminalButton
+                aria-label="Filter shadow status all"
+                tone={shadowStatusFilter === "all" ? "accent" : "default"}
+                onClick={() => setShadowStatusFilter("all")}
+              >
+                all
+              </TerminalButton>
               {polyAlphaFilters.shadowStatuses.map((status) => (
-                <StatusPill key={status} label={status} tone={status === "validated" ? "ok" : "warn"} />
+                <TerminalButton
+                  key={status}
+                  aria-label={`Filter shadow status ${status}`}
+                  tone={shadowStatusFilter === status ? "accent" : "default"}
+                  onClick={() => setShadowStatusFilter(status)}
+                >
+                  {status}
+                </TerminalButton>
               ))}
             </div>
           </div>
@@ -313,12 +343,22 @@ export function SignalsPage() {
           <div className="page-section">
             <h2>Promotion decision filters</h2>
             <div className="detail-badges" aria-label="Promotion decision filters">
+              <TerminalButton
+                aria-label="Filter promotion decision all"
+                tone={promotionDecisionFilter === "all" ? "accent" : "default"}
+                onClick={() => setPromotionDecisionFilter("all")}
+              >
+                all
+              </TerminalButton>
               {polyAlphaFilters.promotionDecisions.map((decision) => (
-                <StatusPill
+                <TerminalButton
                   key={decision}
-                  label={decision}
-                  tone={decision === "promote" ? "ok" : decision === "reject" ? "danger" : "warn"}
-                />
+                  aria-label={`Filter promotion decision ${decision}`}
+                  tone={promotionDecisionFilter === decision ? "accent" : "default"}
+                  onClick={() => setPromotionDecisionFilter(decision)}
+                >
+                  {decision}
+                </TerminalButton>
               ))}
             </div>
           </div>

@@ -322,4 +322,18 @@ describe("AuditPage", () => {
     expect(within(chain).getByText("paper_fill_skipped")).toBeInTheDocument();
     expect(within(chain).getByText("poly-promotion-fed")).toBeInTheDocument();
   });
+
+  it("falls back to Poly Alpha exploration and audit mocks when general audit events omit the evidence chain", async () => {
+    vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+
+    const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
+    expect(within(chain).getByText("poly-explore-fed")).toBeInTheDocument();
+    expect(within(chain).getByText("pass")).toBeInTheDocument();
+    expect(within(chain).getByText("paper_fill_skipped")).toBeInTheDocument();
+    expect(within(chain).getByText("poly-promotion-fed")).toBeInTheDocument();
+  });
 });

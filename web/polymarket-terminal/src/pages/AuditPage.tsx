@@ -15,7 +15,9 @@ import type {
   MarketCandidate,
   PaperPosition,
   PaperTrade,
+  PolyAlphaAuditEvent,
   PolyAlphaEvidencePack,
+  PolyAlphaExplorationDecision,
   PolyAlphaPromotionDecision,
   SignalRow,
   SkipRow,
@@ -26,7 +28,9 @@ import {
   mockMarketCandidates,
   mockPaperPositions,
   mockPaperTrades,
+  mockPolyAlphaAuditEvents,
   mockPolyAlphaEvidencePacks,
+  mockPolyAlphaExplorationDecisions,
   mockPolyAlphaPromotionDecisions,
   mockSignals,
   mockSkips,
@@ -42,6 +46,8 @@ type PolyAlphaEvidenceChainRow = {
   opportunityId: string;
   evidencePackId: string;
   explorationAction: string;
+  explorationId: string;
+  explorationDecision: string;
   paperFillAction: string;
   promotionId: string;
 };
@@ -195,8 +201,18 @@ const polyAlphaEvidenceChainColumns: Array<DenseDataTableColumn<PolyAlphaEvidenc
   },
   {
     key: "exploration",
-    header: "Exploration decision",
+    header: "Exploration action",
     render: (row) => row.explorationAction
+  },
+  {
+    key: "explorationId",
+    header: "Exploration id",
+    render: (row) => row.explorationId
+  },
+  {
+    key: "explorationDecision",
+    header: "Exploration decision",
+    render: (row) => row.explorationDecision
   },
   {
     key: "paperFill",
@@ -222,6 +238,9 @@ export function AuditPage() {
     useState<PolyAlphaEvidencePack[]>(mockPolyAlphaEvidencePacks);
   const [polyAlphaPromotions, setPolyAlphaPromotions] =
     useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
+  const [polyAlphaExplorationDecisions] =
+    useState<PolyAlphaExplorationDecision[]>(mockPolyAlphaExplorationDecisions);
+  const [polyAlphaAuditEvents] = useState<PolyAlphaAuditEvent[]>(mockPolyAlphaAuditEvents);
   const [deploymentFilter, setDeploymentFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -318,28 +337,40 @@ export function AuditPage() {
   const polyAlphaEvidenceChain = useMemo<PolyAlphaEvidenceChainRow[]>(
     () =>
       polyAlphaEvidencePacks.map((pack) => {
+        const explorationDecision = polyAlphaExplorationDecisions.find(
+          (decision) => decision.opportunityId === pack.opportunityId || decision.evidencePackId === pack.id
+        );
         const explorationEvent = events.find(
           (event) =>
-            event.action === "exploration_decision" &&
+            event.action?.startsWith("exploration") &&
             (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
         );
-        const paperFillEvent = events.find(
+        const polyAlphaPaperFillEvent = polyAlphaAuditEvents.find(
+          (event) => event.action === "paper_fill_skipped" && event.opportunityId === pack.opportunityId
+        );
+        const generalPaperFillEvent = events.find(
           (event) =>
             event.action === "paper_fill_skipped" &&
             (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
         );
         const promotion = polyAlphaPromotions.find((decision) => decision.opportunityId === pack.opportunityId);
+        const paperFillAction =
+          generalPaperFillEvent?.action ??
+          polyAlphaPaperFillEvent?.action ??
+          (promotion?.decision === "watch" ? "paper_fill_skipped" : "");
 
         return {
           id: pack.id,
           opportunityId: pack.opportunityId,
           evidencePackId: pack.id,
-          explorationAction: explorationEvent?.action ?? "exploration decision",
-          paperFillAction: paperFillEvent?.action ?? "",
+          explorationAction: explorationEvent?.action ?? (explorationDecision ? "exploration_decision" : ""),
+          explorationId: explorationDecision?.id ?? "",
+          explorationDecision: explorationDecision?.decision ?? "",
+          paperFillAction,
           promotionId: promotion?.id ?? ""
         };
       }),
-    [events, polyAlphaEvidencePacks, polyAlphaPromotions]
+    [events, polyAlphaAuditEvents, polyAlphaEvidencePacks, polyAlphaExplorationDecisions, polyAlphaPromotions]
   );
 
   return (

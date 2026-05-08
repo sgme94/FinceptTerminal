@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TerminalStatus } from "../api/types";
 import {
@@ -88,12 +89,41 @@ describe("SignalsPage", () => {
     expect(within(polyAlphaTable).getByText("Calibration 0.04")).toBeInTheDocument();
 
     const statusFilters = screen.getByLabelText("Shadow status filters");
-    expect(within(statusFilters).getByText("shadow")).toBeInTheDocument();
-    expect(within(statusFilters).getByText("validated")).toBeInTheDocument();
+    expect(within(statusFilters).getByRole("button", { name: "Filter shadow status shadow" })).toBeInTheDocument();
+    expect(within(statusFilters).getByRole("button", { name: "Filter shadow status validated" })).toBeInTheDocument();
     expect(within(statusFilters).queryByText("watch")).not.toBeInTheDocument();
 
     const promotionFilters = screen.getByLabelText("Promotion decision filters");
-    expect(within(promotionFilters).getByText("watch")).toBeInTheDocument();
-    expect(within(promotionFilters).getByText("reject")).toBeInTheDocument();
+    expect(within(promotionFilters).getByRole("button", { name: "Filter promotion decision watch" })).toBeInTheDocument();
+    expect(within(promotionFilters).getByRole("button", { name: "Filter promotion decision reject" })).toBeInTheDocument();
+  });
+
+  it("filters Poly Alpha rows by shadow status", async () => {
+    const user = userEvent.setup();
+
+    render(<SignalsPage />);
+
+    const statusFilters = await screen.findByLabelText("Shadow status filters");
+    await user.click(within(statusFilters).getByRole("button", { name: "Filter shadow status validated" }));
+
+    const polyAlphaTable = screen.getByRole("table", { name: "Poly Alpha shadow signals" });
+    expect(within(polyAlphaTable).getByText("poly-shadow-btc")).toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("poly-shadow-fed")).not.toBeInTheDocument();
+  });
+
+  it("filters Poly Alpha rows by promotion decision independently from shadow status", async () => {
+    const user = userEvent.setup();
+
+    render(<SignalsPage />);
+
+    const promotionFilters = await screen.findByLabelText("Promotion decision filters");
+    await user.click(within(promotionFilters).getByRole("button", { name: "Filter promotion decision watch" }));
+
+    const statusFilters = screen.getByLabelText("Shadow status filters");
+    expect(within(statusFilters).queryByRole("button", { name: /watch/i })).not.toBeInTheDocument();
+
+    const polyAlphaTable = screen.getByRole("table", { name: "Poly Alpha shadow signals" });
+    expect(within(polyAlphaTable).getByText("poly-shadow-fed")).toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("poly-shadow-btc")).not.toBeInTheDocument();
   });
 });
