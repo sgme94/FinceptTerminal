@@ -1,0 +1,67 @@
+<h2>B2 详细前端架构：四核心工作区</h2>
+<p class="subtitle">这一版保留 Fincept 登录态终端 shell，但把产品中心从“金融信息终端”改成“Polymarket 自动交易研究与运营终端”。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Desktop Terminal Layout</div>
+  <div class="mockup-body">
+    <div class="mock-nav">F1 OVERVIEW | F2 MARKETS | F3 SIGNALS | F4 RISK | F5 NEWS | F6 DATA | F7 AGENTS | F8 AUDIT | SEARCH | CREDITS | API | CONN | TIME</div>
+    <div class="placeholder">Ticker Tape: active markets, probability moves, bot PnL, exposure alerts</div>
+    <div style="display:grid; grid-template-columns:48px minmax(0,1fr) 300px; gap:10px;">
+      <div class="mock-sidebar">
+        Icons<br><br>
+        Overview<br>Markets<br>Signals<br>Risk<br>News<br>Data<br>Agents<br>Arena<br>Audit<br>Settings
+      </div>
+      <div class="mock-content">
+        <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:8px;">
+          <div class="placeholder">Overview: bot mode, equity, PnL, active positions, pending orders</div>
+          <div class="placeholder">Risk: exposure, max loss, correlated markets, circuit breakers</div>
+          <div class="placeholder">Markets: event cards, probability chart, order book, liquidity</div>
+          <div class="placeholder">Signals: model forecast, agent consensus, news/OSINT evidence</div>
+        </div>
+      </div>
+      <div class="mock-sidebar">Right Rail<br><br>Live News<br>Watchlist<br>Most Active<br>Risk Alerts</div>
+    </div>
+    <div class="placeholder">Bottom Status: POLY API, data feeds, agent cycles, order router, store, latency, uptime</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">原 Fincept 页面到 Polymarket 的映射</div>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="map-dashboard" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content"><h3>Dashboard -> Overview</h3><p>保留 shortcuts + agent composer 结构，改为 bot health、paper/live、资金、持仓、订单队列。</p></div>
+    </div>
+    <div class="option" data-choice="map-markets" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content"><h3>Markets -> Polymarket Markets</h3><p>把 global market cards 改为事件市场卡、概率走势、成交量、spread、liquidity、order book。</p></div>
+    </div>
+    <div class="option" data-choice="map-agents" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content"><h3>Agentic World -> Event Sentinels</h3><p>把 sentinels 改造成政治、宏观、加密、体育、政策、链上等事件监控 agent。</p></div>
+    </div>
+    <div class="option" data-choice="map-funds" onclick="toggleSelect(this)">
+      <div class="letter">4</div>
+      <div class="content"><h3>Fund Managers -> Strategy Arena</h3><p>把 fund manager leaderboard 改成策略/agent 组合排名：NAV、return、drawdown、hit rate、trade log。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>保留</h4>
+    <ul>
+      <li>Fincept 终端黑底、等宽字体、低圆角、右侧 rail、底部状态栏。</li>
+      <li>14 个入口的导航密度，但重命名为 Polymarket 运营语义。</li>
+      <li>Dashboard composer、Markets 密集表格、News feed、Agentic/Fund Manager 两个特色页面。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>改造</h4>
+    <ul>
+      <li>股票/外汇/宏观行情降级为外部参考数据，不作为核心交易对象。</li>
+      <li>Plans & Credits 暂时作为占位支撑页，不进入 MVP 核心。</li>
+      <li>移动端按 Fincept 骨架重做触控尺寸，不照搬原站 18-26px 小按钮。</li>
+    </ul>
+  </div>
+</div>

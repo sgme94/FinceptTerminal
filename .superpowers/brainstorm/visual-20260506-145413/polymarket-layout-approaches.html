@@ -1,0 +1,91 @@
+<h2>路线 B：Fincept Shell + Polymarket 产品原型</h2>
+<p class="subtitle">三种方式都保留 Fincept 登录态终端骨架，但 Polymarket 改造深度不同。点击你倾向的方向，或直接在终端回复。</p>
+
+<div class="cards">
+  <div class="card" data-choice="b1-dashboard-first" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B1: Dashboard First</div>
+        <div class="mockup-body">
+          <div class="mock-nav">F1 BOT | F2 MKTS | F3 SIGNAL | F4 RISK | F5 NEWS | F6 ECON | F7 AGENTS | F8 HIST</div>
+          <div class="placeholder">Polymarket event ticker: politics / macro / crypto / sports</div>
+          <div style="display:flex; gap:8px;">
+            <div class="mock-sidebar">Rail</div>
+            <div class="mock-content">
+              Bot Control Center<br>
+              <span style="font-size:12px;color:#888">paper/live switch, capital, exposure, active markets, order queue</span><br><br>
+              Agent Composer<br>
+              <span style="font-size:12px;color:#888">ask agents to research, score, and propose trades</span>
+            </div>
+            <div class="mock-sidebar">News<br>Watchlist<br>Most Active</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B1 Dashboard 控制台优先</h3>
+      <p>最快形成可用管理页。Dashboard 直接变成 Bot Control Center，Markets/News/Agents/Fund Managers 逐步改造。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b2-four-workspaces" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B2: Four Core Workspaces</div>
+        <div class="mockup-body">
+          <div class="mock-nav">F1 OVERVIEW | F2 MARKETS | F3 SIGNALS | F4 RISK | F5 NEWS | F6 DATA | F7 AGENTS | F8 AUDIT</div>
+          <div class="placeholder">Market probability ticker + PnL ticker</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div class="placeholder">Overview: bot health + PnL</div>
+            <div class="placeholder">Markets: order book + chart</div>
+            <div class="placeholder">Signals: model/agent score</div>
+            <div class="placeholder">Risk: exposure + limits</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B2 四工作区重组</h3>
+      <p>把 Fincept 入口重新归并为 Overview、Markets、Signals、Risk、News/Data、Agents、Audit。更适合 Polymarket bot 的真实运营。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b3-agentic-arena" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B3: Agentic Arena</div>
+        <div class="mockup-body">
+          <div class="mock-nav">F1 DASH | F2 MKTS | F3 AGENTS | F4 ARENA | F5 NEWS | F6 ECON | F7 RISK | F8 HIST</div>
+          <div class="placeholder">Live agent cycle ticker</div>
+          <div style="display:flex; gap:8px;">
+            <div class="mock-content">Agentic World<br>event sentinels, claims, evidence, dissent</div>
+            <div class="mock-content">Fund Manager Arena<br>strategy leaderboard, NAV, drawdown, trades</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B3 Agent 竞技场优先</h3>
+      <p>突出多 Agent 研究和多策略排名，适合研究展示；但 Bot 执行控制会分散，需要额外设计运营面板。</p>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>我的推荐：B2</h4>
+    <ul>
+      <li>比 B1 更贴近自动交易平台的真实操作路径。</li>
+      <li>比 B3 更容易落到现有 paper bot、风险和审计模块。</li>
+      <li>仍能复用 Fincept 的 Markets、News、Agentic World、Fund Managers 视觉资产。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>需要约束</h4>
+    <ul>
+      <li>不是逐页像素级克隆，营销/账户/credits 页面降级为支撑页。</li>
+      <li>实时行情和新闻用 mock/data adapter，不能硬编码抓取数值。</li>
+      <li>移动端要主动修正原站小点击目标。</li>
+    </ul>
+  </div>
+</div>

@@ -88,6 +88,58 @@ static QWidget* build_stat_card(const QString& label, const QString& value, cons
     return card;
 }
 
+QWidget* DeploymentDashboard::build_polymarket_summary(const AlgoDeployment& d, QWidget* parent) {
+    auto* section = new QWidget(parent);
+    section->setStyleSheet("background: transparent; border: none;");
+    auto* vl = new QVBoxLayout(section);
+    vl->setContentsMargins(0, 4, 0, 0);
+    vl->setSpacing(4);
+
+    auto* title = new QLabel("POLYMARKET PAPER BOT", section);
+    title->setStyleSheet(kSectionLabel());
+    vl->addWidget(title);
+
+    auto* grid_widget = new QWidget(section);
+    grid_widget->setStyleSheet("background: transparent; border: none;");
+    auto* grid = new QGridLayout(grid_widget);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(16);
+    grid->setVerticalSpacing(3);
+    int row = 0;
+
+    auto add_row = [&](const QString& label, const QString& value) {
+        auto* lbl = new QLabel(label, grid_widget);
+        lbl->setStyleSheet(QString("color: %1; font-size: %2px; %3 background: transparent; border: none;")
+                               .arg(fincept::ui::colors::TEXT_TERTIARY())
+                               .arg(fincept::ui::fonts::TINY)
+                               .arg(kMonoFont()));
+        auto* val = new QLabel(value.isEmpty() ? "-" : value, grid_widget);
+        val->setWordWrap(true);
+        val->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: 700; %3 background: transparent; border: none;")
+                               .arg(fincept::ui::colors::TEXT_PRIMARY())
+                               .arg(fincept::ui::fonts::TINY)
+                               .arg(kMonoFont()));
+        grid->addWidget(lbl, row, 0);
+        grid->addWidget(val, row, 1);
+        ++row;
+    };
+
+    add_row("STATE", d.poly_bot_state);
+    add_row("SCANNED", QString::number(d.poly_scanned_count));
+    add_row("CANDIDATES / SIGNALS / SKIPPED",
+            QString("%1 / %2 / %3").arg(d.poly_candidate_count).arg(d.poly_signal_count).arg(d.poly_skipped_count));
+    add_row("POSITIONS", QString::number(d.poly_position_count));
+    add_row("REALIZED / UNREALIZED PNL",
+            QString("%1 / %2").arg(d.poly_realized_pnl, 0, 'f', 2).arg(d.poly_unrealized_pnl, 0, 'f', 2));
+    add_row("TOP SKIPS", d.poly_top_skipped_reasons);
+    add_row("RECENT FILLS", d.poly_recent_fills);
+    add_row("LATEST SIGNAL", d.poly_latest_signal.isEmpty() ? d.poly_latest_signal_details
+                                                             : d.poly_latest_signal + " " + d.poly_latest_signal_details);
+
+    vl->addWidget(grid_widget);
+    return section;
+}
+
 // ── Build deployment card ───────────────────────────────────────────────────
 
 QWidget* DeploymentDashboard::build_deployment_card(const AlgoDeployment& d, QWidget* parent) {
@@ -217,6 +269,9 @@ QWidget* DeploymentDashboard::build_deployment_card(const AlgoDeployment& d, QWi
     metrics->addStretch();
 
     vl->addLayout(metrics);
+
+    if (d.market_type == "polymarket")
+        vl->addWidget(build_polymarket_summary(d, card));
 
     // ── Win rate progress bar ────────────────────────────────────────────────
     auto* win_bar = new QProgressBar(card);

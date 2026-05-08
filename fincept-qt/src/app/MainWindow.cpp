@@ -109,6 +109,15 @@
 
 namespace fincept {
 
+namespace {
+
+bool skip_pin_gate_enabled() {
+    const QByteArray value = qgetenv("FINCEPT_SKIP_PIN").trimmed().toLower();
+    return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
+} // namespace
+
 int MainWindow::next_window_id() {
     // Seed from the max of (persisted window IDs, live window IDs) so a new
     // window never reuses an ID that already owns saved geometry/dock layout.
@@ -778,7 +787,8 @@ MainWindow::MainWindow(int window_id, QWidget* parent) : QMainWindow(parent), wi
     if (auth_mgr.is_authenticated() || auth_mgr.is_loading()) {
         // If user is authenticated and has a PIN, show lock screen first.
         // If no PIN, on_auth_state_changed will route to PIN setup.
-        if (auth_mgr.is_authenticated() && auth::PinManager::instance().has_pin()) {
+        if (auth_mgr.is_authenticated() && auth::PinManager::instance().has_pin()
+            && !skip_pin_gate_enabled()) {
             LOG_INFO("MainWindow", "Session restored — showing PIN unlock");
             lock_screen_->show_unlock();
             locked_ = true;
@@ -1059,6 +1069,11 @@ void MainWindow::on_auth_state_changed() {
     if (locked_) {
         if (!auth.is_authenticated()) {
             locked_ = false; // fall through to show login screen
+        } else if (skip_pin_gate_enabled()) {
+            LOG_WARN("MainWindow", "PIN gate skipped by FINCEPT_SKIP_PIN");
+            locked_ = false;
+            pin_gate_cleared_ = true;
+            auth::InactivityGuard::instance().set_terminal_locked(false);
         } else {
             return; // still authenticated — stay on lock screen
         }
@@ -1070,6 +1085,13 @@ void MainWindow::on_auth_state_changed() {
         return;
 
     if (auth.is_authenticated()) {
+        if (skip_pin_gate_enabled() && !pin_gate_cleared_) {
+            LOG_WARN("MainWindow", "PIN gate skipped by FINCEPT_SKIP_PIN");
+            locked_ = false;
+            pin_gate_cleared_ = true;
+            auth::InactivityGuard::instance().set_terminal_locked(false);
+        }
+
         // Don't redirect if user is already on the app stack (dashboard/workspace
         // at index 1, or chat mode at index 2) — UNLESS the PIN gate hasn't been
         // cleared yet (auth completed while loading state showed dashboard early).
@@ -1234,6 +1256,13 @@ void MainWindow::show_lock_screen() {
     auto& auth = auth::AuthManager::instance();
     if (!auth.is_authenticated()) {
         LOG_DEBUG("MainWindow", "show_lock_screen: ignored — not authenticated");
+        return;
+    }
+    if (skip_pin_gate_enabled()) {
+        LOG_DEBUG("MainWindow", "show_lock_screen: ignored — FINCEPT_SKIP_PIN is enabled");
+        locked_ = false;
+        pin_gate_cleared_ = true;
+        auth::InactivityGuard::instance().set_terminal_locked(false);
         return;
     }
 

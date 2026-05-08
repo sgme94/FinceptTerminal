@@ -1,0 +1,453 @@
+{
+  "screenshot": "screenshots/feature-settings.png",
+  "state": {
+    "label": "settings-redacted-recapture",
+    "url": "https://fincept.in/settings",
+    "title": "FinceptTerminal — Professional Financial Intelligence Platform",
+    "bodyText": "F1 DASH F2 MKT F3 WL F4 PORT F5 NEWS F6 ECON F7 AGENTS F8 HIST GO | CREDITS: 350 | API: OPERATIONALv3.0.0925ms | CONN: LIVE | 14:33:57 GMT+8 ES=F 7,308.00 +0.10% NQ=F 28,345.25 +0.34% YM=F 49,490.00 +0.19% RTY=F 2,857.10 +0.33% ^VIX 17.38 +0.00% DX-Y.NYB 98.07 -0.24% BTC-USD 81,111.00 +0.26% ETH-USD 2,358.39 -0.10% CL=F 100.98 -1.67% GC=F 4,662.10 +2.03% SI=F 76.09 +3.80% ^TNX 4.42 -0.23% AAPL 284.18 +2.63% MSFT 411.38 -0.95% NVDA 196.50 -1.40% GOOGL 388.43 +0.54% AMZN 273.55 -0.96% META 604.96 -1.37% TSLA 389.37 -1.47% JPM 309.40 +0.55% V 322.03 -0.95% UNH 363.87 -1.78% XOM 154.88 +1.16% LLY 988.87 +1.75% ES=F 7,308.00 +0.10% NQ=F 28,345.25 +0.34% YM=F 49,490.00 +0.19% RTY=F 2,857.10 +0.33% ^VIX 17.38 +0.00% DX-Y.NYB 98.07 -0.24% BTC-USD 81,111.00 +0.26% ETH-USD 2,358.39 -0.10% CL=F 100.98 -1.67% GC=F 4,662.10 +2.03% SI=F 76.09 +3.80% ^TNX 4.42 -0.23% AAPL 284.18 +2.63% MSFT 411.38 -0.95% NVDA 196.50 -1.40% GOOGL 388.43 +0.54% AMZN 273.55 -0.96% META 604.96 -1.37% TSLA 389.37 -1.47% JPM 309.40 +0.55% V 322.03 -0.95% UNH 363.87 -1.78% XOM 154.88 +1.16% LLY 988.87 +1.75% SYSTEM SETTINGS PROFILE API KEY SECURITY NOTIFICATIONS USAGE LOGIN HISTORY ACCOUNT PROFILE ▸ CONFIGURE VERIFICATION VERIFIED TWO-FACTOR AUTH DISABLED ACCOUNT TYPE FREE USER INFORMATION EDIT PROFILE USERNAME [user] EMAIL [email] COUNTRY CODE +86 PHONE [phone] ACCOUNT STATISTICS MEMBER SINCE May 6, 2026 LAST LOGIN May 6, 11:24 AM API CREDITS 350 AVAILABLE CREDITS FINCEPT | [email]FREE | API v3.0.0 | FEEDS: 244s ago SYS: OPERATIONAL | LAT: 925ms | CONN: LIVE | UP: 5s | MEM: 34MB | 14:33:57",
+    "interactive": [
+      {
+        "i": 0,
+        "tag": "SPAN",
+        "text": "F1 DASH",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 8,
+          "y": 3,
+          "w": 70,
+          "h": 25
+        }
+      },
+      {
+        "i": 1,
+        "tag": "SPAN",
+        "text": "F2 MKT",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 80,
+          "y": 3,
+          "w": 63,
+          "h": 25
+        }
+      },
+      {
+        "i": 2,
+        "tag": "SPAN",
+        "text": "F3 WL",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 144,
+          "y": 3,
+          "w": 56,
+          "h": 25
+        }
+      },
+      {
+        "i": 3,
+        "tag": "SPAN",
+        "text": "F4 PORT",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 202,
+          "y": 3,
+          "w": 70,
+          "h": 25
+        }
+      },
+      {
+        "i": 4,
+        "tag": "SPAN",
+        "text": "F5 NEWS",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 274,
+          "y": 3,
+          "w": 70,
+          "h": 25
+        }
+      },
+      {
+        "i": 5,
+        "tag": "SPAN",
+        "text": "F6 ECON",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 345,
+          "y": 3,
+          "w": 70,
+          "h": 25
+        }
+      },
+      {
+        "i": 6,
+        "tag": "SPAN",
+        "text": "F7 AGENTS",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 417,
+          "y": 3,
+          "w": 84,
+          "h": 25
+        }
+      },
+      {
+        "i": 7,
+        "tag": "SPAN",
+        "text": "F8 HIST",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 503,
+          "y": 3,
+          "w": 70,
+          "h": 25
+        }
+      },
+      {
+        "i": 8,
+        "tag": "INPUT",
+        "text": "SEARCH",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 768,
+          "y": 10,
+          "w": 231,
+          "h": 12
+        }
+      },
+      {
+        "i": 9,
+        "tag": "BUTTON",
+        "text": "GO",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 999,
+          "y": 6,
+          "w": 27,
+          "h": 20
+        }
+      },
+      {
+        "i": 10,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Toggle Fullscreen",
+        "aria": null,
+        "box": {
+          "x": 1194,
+          "y": 7,
+          "w": 22,
+          "h": 18
+        }
+      },
+      {
+        "i": 11,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Dashboard",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 60,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 12,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Markets",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 98,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 13,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Watchlist",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 136,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 14,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Portfolio",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 174,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 15,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "News",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 212,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 16,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Economics",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 250,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 17,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Research",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 288,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 18,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Agentic World",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 326,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 19,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Fund Managers",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 364,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 20,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Dataroom",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 402,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 21,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Plans & Credits",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 440,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 22,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "History",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 724,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 23,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Alerts",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 762,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 24,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Settings",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 800,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 25,
+        "tag": "BUTTON",
+        "text": "",
+        "title": "Log Out",
+        "aria": null,
+        "box": {
+          "x": 3,
+          "y": 838,
+          "w": 42,
+          "h": 36
+        }
+      },
+      {
+        "i": 26,
+        "tag": "BUTTON",
+        "text": "PROFILE",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 58,
+          "y": 93,
+          "w": 77,
+          "h": 22
+        }
+      },
+      {
+        "i": 27,
+        "tag": "BUTTON",
+        "text": "API KEY",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 138,
+          "y": 93,
+          "w": 77,
+          "h": 22
+        }
+      },
+      {
+        "i": 28,
+        "tag": "BUTTON",
+        "text": "SECURITY",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 219,
+          "y": 93,
+          "w": 83,
+          "h": 22
+        }
+      },
+      {
+        "i": 29,
+        "tag": "BUTTON",
+        "text": "NOTIFICATIONS",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 305,
+          "y": 93,
+          "w": 113,
+          "h": 22
+        }
+      },
+      {
+        "i": 30,
+        "tag": "BUTTON",
+        "text": "USAGE",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 421,
+          "y": 93,
+          "w": 66,
+          "h": 22
+        }
+      },
+      {
+        "i": 31,
+        "tag": "BUTTON",
+        "text": "LOGIN HISTORY",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 489,
+          "y": 93,
+          "w": 113,
+          "h": 22
+        }
+      },
+      {
+        "i": 32,
+        "tag": "BUTTON",
+        "text": "ACCOUNT",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 605,
+          "y": 93,
+          "w": 77,
+          "h": 22
+        }
+      },
+      {
+        "i": 33,
+        "tag": "BUTTON",
+        "text": "EDIT PROFILE",
+        "title": null,
+        "aria": null,
+        "box": {
+          "x": 1587,
+          "y": 228,
+          "w": 103,
+          "h": 20
+        }
+      }
+    ]
+  }
+}

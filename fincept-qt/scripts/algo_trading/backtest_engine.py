@@ -43,6 +43,24 @@ debug(f"Python version: {sys.version}")
 debug(f"Working directory: {os.getcwd()}")
 debug(f"Script location: {os.path.abspath(__file__)}")
 
+
+def polymarket_token_id_from_payload(payload: dict) -> str:
+    """Return the CLOB token id from explicit or legacy strategy fields."""
+    if not isinstance(payload, dict):
+        return ""
+    token_id = payload.get('token_id') or payload.get('asset_id') or payload.get('clob_token_id') or ""
+    if token_id:
+        return str(token_id).strip()
+    bot_config = payload.get('bot_config') or {}
+    if isinstance(bot_config, str):
+        try:
+            bot_config = json.loads(bot_config or '{}')
+        except Exception:
+            bot_config = {}
+    if isinstance(bot_config, dict):
+        token_id = bot_config.get('token_id') or bot_config.get('asset_id') or bot_config.get('clob_token_id') or ""
+    return str(token_id).strip() if token_id else ""
+
 try:
     import pandas as pd
     debug(f"pandas version: {pd.__version__}")
@@ -452,7 +470,7 @@ def run_backtest(
     BARS_PER_YEAR = {
         '1m': 252 * 390, '3m': 252 * 130, '5m': 252 * 78, '10m': 252 * 39,
         '15m': 252 * 26, '30m': 252 * 13, '1h': int(252 * 6.5), '4h': int(252 * 1.625),
-        '1d': 252, '1D': 252, 'D': 252, '1w': 52, '1W': 52, '1M': 12,
+        '1d': 252, '1D': 252, 'D': 252, '1w': 52, '1W': 52, '1M': 12, '1mth': 12,
     }
     ann_factor = BARS_PER_YEAR.get(timeframe, 252)
 
@@ -538,6 +556,7 @@ def ensure_algo_strategies_schema(conn):
             exit_conditions TEXT DEFAULT '[]',
             entry_logic TEXT DEFAULT 'AND',
             exit_logic TEXT DEFAULT 'AND',
+            bot_config TEXT DEFAULT '{}',
             stop_loss REAL DEFAULT 0,
             take_profit REAL DEFAULT 0,
             trailing_stop REAL DEFAULT 0,
@@ -555,6 +574,7 @@ def ensure_algo_strategies_schema(conn):
         ('market_type', "TEXT DEFAULT 'equity'"),
         ('market_id', "TEXT DEFAULT ''"),
         ('symbol', "TEXT DEFAULT ''"),
+        ('bot_config', "TEXT DEFAULT '{}'"),
     ):
         if column not in existing_columns:
             conn.execute(f"ALTER TABLE algo_strategies ADD COLUMN {column} {definition}")
@@ -563,14 +583,19 @@ def ensure_algo_strategies_schema(conn):
 def cmd_save_strategy(params: dict, db_path: str):
     """Insert or replace a strategy in algo_strategies table."""
     try:
+        market_type = params.get('market_type', 'equity') or 'equity'
+        symbol = params.get('symbol', '')
+        if market_type == 'polymarket' and not symbol:
+            symbol = polymarket_token_id_from_payload(params)
+
         conn = open_db(db_path)
         ensure_algo_strategies_schema(conn)
         conn.execute("""
             INSERT INTO algo_strategies
                 (id, name, description, market_type, market_id, symbol, timeframe,
                  entry_conditions, exit_conditions, entry_logic, exit_logic,
-                 stop_loss, take_profit, trailing_stop, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                 bot_config, stop_loss, take_profit, trailing_stop, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
@@ -582,6 +607,7 @@ def cmd_save_strategy(params: dict, db_path: str):
                 exit_conditions = excluded.exit_conditions,
                 entry_logic = excluded.entry_logic,
                 exit_logic = excluded.exit_logic,
+                bot_config = excluded.bot_config,
                 stop_loss = excluded.stop_loss,
                 take_profit = excluded.take_profit,
                 trailing_stop = excluded.trailing_stop,
@@ -590,14 +616,15 @@ def cmd_save_strategy(params: dict, db_path: str):
             params['id'],
             params.get('name', ''),
             params.get('description', ''),
-            params.get('market_type', 'equity') or 'equity',
+            market_type,
             params.get('market_id', ''),
-            params.get('symbol', ''),
+            symbol,
             params.get('timeframe', '1d'),
             json.dumps(params.get('entry_conditions', [])),
             json.dumps(params.get('exit_conditions', [])),
             params.get('entry_logic', 'AND'),
             params.get('exit_logic', 'AND'),
+            json.dumps(params.get('bot_config', {})),
             params.get('stop_loss', 0),
             params.get('take_profit', 0),
             params.get('trailing_stop', 0),
@@ -617,7 +644,7 @@ def cmd_list_strategies(db_path: str):
         rows = conn.execute("""
             SELECT id, name, description, market_type, market_id, symbol, timeframe,
                    entry_conditions, exit_conditions, entry_logic, exit_logic,
-                   stop_loss, take_profit, trailing_stop,
+                   bot_config, stop_loss, take_profit, trailing_stop,
                    is_active, created_at, updated_at
             FROM algo_strategies
             WHERE is_active = 1
@@ -636,6 +663,10 @@ def cmd_list_strategies(db_path: str):
                 s['exit_conditions'] = json.loads(s['exit_conditions'] or '[]')
             except Exception:
                 s['exit_conditions'] = []
+            try:
+                s['bot_config'] = json.loads(s.get('bot_config') or '{}')
+            except Exception:
+                s['bot_config'] = {}
             strategies.append(s)
         print(json.dumps({'success': True, 'strategies': strategies}))
     except sqlite3.OperationalError as e:
@@ -730,6 +761,8 @@ def cmd_run_backtest(params: dict, db_path: str):
     market_type = params.get('market_type', 'equity') or 'equity'
     market_id = params.get('market_id', '') or ''
     symbol = params.get('symbol', '') or ''
+    if market_type == 'polymarket' and not symbol:
+        symbol = polymarket_token_id_from_payload(params)
 
     if db_path and os.path.exists(db_path) and strategy_id:
         try:
@@ -737,14 +770,14 @@ def cmd_run_backtest(params: dict, db_path: str):
             ensure_algo_strategies_schema(conn)
             row = conn.execute(
                 "SELECT market_type, market_id, symbol, timeframe, entry_conditions, exit_conditions, "
-                "entry_logic, exit_logic, stop_loss, take_profit FROM algo_strategies WHERE id = ?",
+                "entry_logic, exit_logic, stop_loss, take_profit, bot_config FROM algo_strategies WHERE id = ?",
                 (strategy_id,)
             ).fetchone()
             conn.close()
             if row:
-                if not params.get('entry_conditions'):
+                if 'entry_conditions' not in params:
                     entry_conditions = json.loads(row['entry_conditions'] or '[]')
-                if not params.get('exit_conditions'):
+                if 'exit_conditions' not in params:
                     exit_conditions = json.loads(row['exit_conditions'] or '[]')
                 if 'entry_logic' not in params:
                     entry_logic = row['entry_logic'] or 'AND'
@@ -762,6 +795,8 @@ def cmd_run_backtest(params: dict, db_path: str):
                     market_id = row['market_id'] or ''
                 if not params.get('symbol'):
                     symbol = row['symbol'] or ''
+                if (row['market_type'] or market_type) == 'polymarket' and not symbol:
+                    symbol = polymarket_token_id_from_payload({'bot_config': row['bot_config'] or '{}'})
                 debug(f"Strategy loaded from DB: {len(entry_conditions)} entry, {len(exit_conditions)} exit conditions")
             else:
                 debug(f"Strategy {strategy_id} not found in DB, using request payload")

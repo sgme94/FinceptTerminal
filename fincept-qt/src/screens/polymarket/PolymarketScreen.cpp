@@ -10,6 +10,7 @@
 #include "screens/polymarket/PolymarketOrderBlotter.h"
 #include "screens/polymarket/PolymarketPriceChart.h"
 #include "screens/polymarket/PolymarketStatusBar.h"
+#include "core/config/AppPaths.h"
 #include "screens/polymarket/PredictionAccountDialog.h"
 #include "services/polymarket/PolymarketService.h"
 #include "services/prediction/PredictionCredentialStore.h"
@@ -20,7 +21,11 @@
 #include "ui/theme/Theme.h"
 
 #include <QSplitter>
+#include <QFileInfo>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QVBoxLayout>
+#include <QUuid>
 
 #include <cmath>
 
@@ -638,6 +643,7 @@ void PolymarketScreen::select_market(const pred::PredictionMarket& market) {
     has_selection_ = true;
 
     detail_panel_->set_market(market);
+    detail_panel_->set_bot_observation(load_bot_observation(market));
     if (status_bar_) status_bar_->set_selected(market.question);
 
     auto* a = active_adapter();
@@ -679,6 +685,121 @@ void PolymarketScreen::select_market(const pred::PredictionMarket& market) {
     }
 
     subscribe_to_market(market);
+}
+
+QVariantMap PolymarketScreen::load_bot_observation(const pred::PredictionMarket& market) const {
+    QVariantMap observation;
+    observation["tracked"] = false;
+    observation["source_labels"] = QStringList{"Polymarket Gamma API", "Polymarket CLOB API"};
+
+    const QString db_path = fincept::AppPaths::data() + "/fincept.db";
+    if (!QFileInfo::exists(db_path))
+        return observation;
+
+    QHash<QString, QString> outcome_by_asset;
+    QStringList asset_ids;
+    for (const auto& outcome : market.outcomes) {
+        if (outcome.asset_id.isEmpty())
+            continue;
+        asset_ids.append(outcome.asset_id);
+        outcome_by_asset.insert(outcome.asset_id, outcome.name);
+    }
+    if (asset_ids.isEmpty())
+        return observation;
+
+    const QString connection_name = "poly_bot_obs_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QVariantList signal_rows;
+    QVariantList trades;
+    QVariantList positions;
+    QVariantMap freshness;
+    bool opened = false;
+
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connection_name);
+        db.setDatabaseName(db_path);
+        opened = db.open();
+        if (!opened)
+            db.close();
+        else {
+
+        for (const auto& asset_id : asset_ids) {
+            QSqlQuery signal_q(db);
+            signal_q.prepare(
+                "SELECT action, entry_price, estimated_probability, edge, reason, created_at "
+                "FROM algo_polymarket_signals WHERE asset_id = ? ORDER BY id DESC LIMIT 1");
+            signal_q.addBindValue(asset_id);
+            if (signal_q.exec() && signal_q.next()) {
+                QVariantMap row;
+                row["outcome"] = outcome_by_asset.value(asset_id);
+                row["asset_id"] = asset_id;
+                row["latest_signal"] = signal_q.value(0).toString();
+                row["price"] = signal_q.value(1).toDouble();
+                row["estimated_probability"] = signal_q.value(2).toDouble();
+                row["edge"] = signal_q.value(3).toDouble();
+                row["reason"] = signal_q.value(4).toString();
+                row["updated_at"] = signal_q.value(5).toString();
+                row["source_api"] = "https://clob.polymarket.com";
+                signal_rows.append(row);
+                freshness["last_signal_update"] = signal_q.value(5).toString();
+            }
+
+            QSqlQuery position_q(db);
+            position_q.prepare(
+                "SELECT size, avg_price, realized_pnl, updated_at "
+                "FROM algo_polymarket_paper_positions WHERE asset_id = ? ORDER BY updated_at DESC LIMIT 1");
+            position_q.addBindValue(asset_id);
+            if (position_q.exec() && position_q.next()) {
+                QVariantMap row;
+                row["outcome"] = outcome_by_asset.value(asset_id);
+                row["asset_id"] = asset_id;
+                row["size"] = position_q.value(0).toDouble();
+                row["avg_price"] = position_q.value(1).toDouble();
+                row["unrealized_pnl"] = 0.0;
+                positions.append(row);
+            }
+
+            QSqlQuery trade_q(db);
+            trade_q.prepare(
+                "SELECT side, size, price, realized_pnl, reason, created_at "
+                "FROM algo_polymarket_paper_trades WHERE asset_id = ? ORDER BY id DESC LIMIT 2");
+            trade_q.addBindValue(asset_id);
+            if (trade_q.exec()) {
+                while (trade_q.next()) {
+                    QVariantMap row;
+                    row["side"] = trade_q.value(0).toString();
+                    row["outcome"] = outcome_by_asset.value(asset_id);
+                    row["size"] = trade_q.value(1).toDouble();
+                    row["price"] = trade_q.value(2).toDouble();
+                    row["realized_pnl"] = trade_q.value(3).toDouble();
+                    row["reason"] = trade_q.value(4).toString();
+                    row["created_at"] = trade_q.value(5).toString();
+                    trades.append(row);
+                }
+            }
+        }
+
+        QSqlQuery market_q(db);
+        market_q.prepare(
+            "SELECT MAX(fetched_at) FROM algo_polymarket_candidates WHERE condition_id = ? OR market_id = ?");
+        market_q.addBindValue(market.key.market_id);
+        market_q.addBindValue(market.key.market_id);
+        if (market_q.exec() && market_q.next())
+            freshness["last_market_fetch"] = market_q.value(0).toString();
+        freshness["last_orderbook_update"] = freshness.value("last_signal_update").toString();
+
+        }
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(connection_name);
+    if (!opened)
+        return observation;
+
+    observation["outcome_signals"] = signal_rows;
+    observation["recent_trades"] = trades;
+    observation["positions"] = positions;
+    observation["freshness"] = freshness;
+    observation["tracked"] = !signal_rows.isEmpty() || !trades.isEmpty() || !positions.isEmpty();
+    return observation;
 }
 
 void PolymarketScreen::subscribe_to_market(const pred::PredictionMarket& market) {

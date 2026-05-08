@@ -10,6 +10,8 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QVariantMap>
+#include <QVBoxLayout>
 #include <QWidget>
 
 namespace fincept::screens::polymarket {
@@ -57,6 +59,7 @@ class PolymarketDetailPanel : public QWidget {
     void set_comments(const QVector<fincept::services::polymarket::Comment>& comments);
     void set_related_markets(const QVector<fincept::services::prediction::PredictionMarket>& markets);
     void set_open_interest(double oi);
+    void set_bot_observation(const QVariantMap& observation);
 
     /// Attach a long-form tooltip (e.g. series fee info) to the market
     /// question label. Pass an empty string to clear. Used by Kalshi to
@@ -106,6 +109,8 @@ class PolymarketDetailPanel : public QWidget {
     QLabel* oi_label_ = nullptr;
     QLabel* status_label_ = nullptr;
     QWidget* outcome_container_ = nullptr;
+    QWidget* bot_observation_container_ = nullptr;
+    QVBoxLayout* bot_observation_layout_ = nullptr;
     QLabel* description_label_ = nullptr;
 
     // Embedded sub-widgets
