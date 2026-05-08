@@ -2,11 +2,18 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TradeProposal } from "../api/types";
-import { mockAuditEvents, mockRiskLimits, mockSkips, mockTradeProposals } from "../data/mockTerminalData";
+import {
+  mockAuditEvents,
+  mockPolyAlphaPromotionDecisions,
+  mockRiskLimits,
+  mockSkips,
+  mockTradeProposals
+} from "../data/mockTerminalData";
 import { RiskPage } from "./RiskPage";
 
 vi.mock("../api/client", () => ({
   approveTradeProposal: vi.fn(),
+  fetchPolyAlphaPromotions: vi.fn(),
   getAuditEvents: vi.fn(),
   getRiskLimits: vi.fn(),
   getSkips: vi.fn(),
@@ -23,6 +30,23 @@ describe("RiskPage", () => {
     vi.mocked(client.getRiskLimits).mockResolvedValue(mockRiskLimits);
     vi.mocked(client.getAuditEvents).mockResolvedValue(mockAuditEvents);
     vi.mocked(client.getSkips).mockResolvedValue(mockSkips);
+    vi.mocked(client.fetchPolyAlphaPromotions).mockResolvedValue([
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-promote",
+        shadowSignalId: "poly-shadow-promoted",
+        decision: "promote",
+        proposalId: "prop-poly-promoted"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-watch",
+        shadowSignalId: "poly-shadow-watch",
+        decision: "watch",
+        proposalId: ""
+      },
+      mockPolyAlphaPromotionDecisions[1]
+    ]);
     vi.mocked(client.approveTradeProposal).mockResolvedValue(undefined);
     vi.mocked(client.rejectTradeProposal).mockResolvedValue(undefined);
     vi.mocked(client.triggerKillSwitch).mockResolvedValue(undefined);
@@ -164,5 +188,18 @@ describe("RiskPage", () => {
     expect(screen.getByText("stale data")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve prop-stale" })).not.toBeInTheDocument();
     expect(client.approveTradeProposal).not.toHaveBeenCalled();
+  });
+
+  it("shows only promoted Poly Alpha proposal candidates and does not show raw shadow signals", async () => {
+    render(<RiskPage />);
+
+    expect(await screen.findByRole("heading", { name: "Risk" })).toBeInTheDocument();
+
+    expect(await screen.findByText("prop-poly-promoted")).toBeInTheDocument();
+    const polyAlphaQueue = screen.getByRole("table", { name: "Poly Alpha Risk queue" });
+    expect(within(polyAlphaQueue).getByText("prop-poly-promoted")).toBeInTheDocument();
+    expect(within(polyAlphaQueue).getByText("promote")).toBeInTheDocument();
+    expect(within(polyAlphaQueue).queryByText("poly-promotion-watch")).not.toBeInTheDocument();
+    expect(screen.queryByText("poly-shadow-watch")).not.toBeInTheDocument();
   });
 });

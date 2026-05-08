@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  fetchPolyAlphaEvidencePacks,
+  fetchPolyAlphaPromotions,
   getAuditEvents,
   getCandidates,
   getPaperPositions,
@@ -13,6 +15,8 @@ import type {
   MarketCandidate,
   PaperPosition,
   PaperTrade,
+  PolyAlphaEvidencePack,
+  PolyAlphaPromotionDecision,
   SignalRow,
   SkipRow,
   TradeProposal
@@ -22,6 +26,8 @@ import {
   mockMarketCandidates,
   mockPaperPositions,
   mockPaperTrades,
+  mockPolyAlphaEvidencePacks,
+  mockPolyAlphaPromotionDecisions,
   mockSignals,
   mockSkips,
   mockTradeProposals
@@ -30,6 +36,15 @@ import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/Dens
 import { StatusPill } from "../components/ui/StatusPill";
 
 type AuditTab = "trades" | "signals" | "positions" | "candidates" | "skips" | "proposals";
+
+type PolyAlphaEvidenceChainRow = {
+  id: string;
+  opportunityId: string;
+  evidencePackId: string;
+  explorationAction: string;
+  paperFillAction: string;
+  promotionId: string;
+};
 
 function statusTransition(event: AuditEvent) {
   const beforeStatus =
@@ -167,6 +182,34 @@ const skipColumns: Array<DenseDataTableColumn<SkipRow>> = [
   }
 ];
 
+const polyAlphaEvidenceChainColumns: Array<DenseDataTableColumn<PolyAlphaEvidenceChainRow>> = [
+  {
+    key: "evidence",
+    header: "Evidence pack",
+    render: (row) => row.evidencePackId
+  },
+  {
+    key: "opportunity",
+    header: "Opportunity",
+    render: (row) => row.opportunityId
+  },
+  {
+    key: "exploration",
+    header: "Exploration decision",
+    render: (row) => row.explorationAction
+  },
+  {
+    key: "paperFill",
+    header: "Paper fill",
+    render: (row) => row.paperFillAction
+  },
+  {
+    key: "promotion",
+    header: "Promotion",
+    render: (row) => row.promotionId
+  }
+];
+
 export function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[]>(mockAuditEvents);
   const [proposals, setProposals] = useState<TradeProposal[]>(mockTradeProposals);
@@ -175,6 +218,10 @@ export function AuditPage() {
   const [candidates, setCandidates] = useState<MarketCandidate[]>(mockMarketCandidates);
   const [signals, setSignals] = useState<SignalRow[]>(mockSignals);
   const [skips, setSkips] = useState<SkipRow[]>(mockSkips);
+  const [polyAlphaEvidencePacks, setPolyAlphaEvidencePacks] =
+    useState<PolyAlphaEvidencePack[]>(mockPolyAlphaEvidencePacks);
+  const [polyAlphaPromotions, setPolyAlphaPromotions] =
+    useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
   const [deploymentFilter, setDeploymentFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -191,9 +238,22 @@ export function AuditPage() {
       getPaperPositions(),
       getCandidates(),
       getSignals(),
-      getSkips()
+      getSkips(),
+      fetchPolyAlphaEvidencePacks(),
+      fetchPolyAlphaPromotions()
     ])
-      .then(([nextEvents, nextProposals, nextTrades, nextPositions, nextCandidates, nextSignals, nextSkips]) => {
+      .then(
+        ([
+          nextEvents,
+          nextProposals,
+          nextTrades,
+          nextPositions,
+          nextCandidates,
+          nextSignals,
+          nextSkips,
+          nextEvidencePacks,
+          nextPromotions
+        ]) => {
         if (isMounted) {
           setEvents(nextEvents);
           setProposals(nextProposals);
@@ -202,6 +262,8 @@ export function AuditPage() {
           setCandidates(nextCandidates);
           setSignals(nextSignals);
           setSkips(nextSkips);
+          setPolyAlphaEvidencePacks(nextEvidencePacks);
+          setPolyAlphaPromotions(nextPromotions);
         }
       })
       .finally(() => {
@@ -253,6 +315,32 @@ export function AuditPage() {
   const filteredCandidates = useMemo(() => candidates, [candidates]);
   const filteredSignals = useMemo(() => signals, [signals]);
   const filteredSkips = useMemo(() => skips, [skips]);
+  const polyAlphaEvidenceChain = useMemo<PolyAlphaEvidenceChainRow[]>(
+    () =>
+      polyAlphaEvidencePacks.map((pack) => {
+        const explorationEvent = events.find(
+          (event) =>
+            event.action === "exploration_decision" &&
+            (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
+        );
+        const paperFillEvent = events.find(
+          (event) =>
+            event.action === "paper_fill_skipped" &&
+            (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
+        );
+        const promotion = polyAlphaPromotions.find((decision) => decision.opportunityId === pack.opportunityId);
+
+        return {
+          id: pack.id,
+          opportunityId: pack.opportunityId,
+          evidencePackId: pack.id,
+          explorationAction: explorationEvent?.action ?? "exploration decision",
+          paperFillAction: paperFillEvent?.action ?? "",
+          promotionId: promotion?.id ?? ""
+        };
+      }),
+    [events, polyAlphaEvidencePacks, polyAlphaPromotions]
+  );
 
   return (
     <section className="workspace-panel page-stack" aria-busy={isLoading}>
@@ -311,6 +399,18 @@ export function AuditPage() {
           </li>
         ))}
       </ul>
+
+      <div className="page-section">
+        <h2>Poly Alpha evidence chain</h2>
+        <DenseDataTable
+          caption="Poly Alpha evidence chain"
+          columns={polyAlphaEvidenceChainColumns}
+          rows={polyAlphaEvidenceChain}
+          getRowKey={(row) => row.id}
+          emptyTitle="No Poly Alpha evidence chain"
+          emptyDescription="No Poly Alpha evidence chain rows are available."
+        />
+      </div>
 
       <div className="tab-row" role="tablist" aria-label="Audit projections">
         {(["trades", "signals", "positions", "candidates", "skips", "proposals"] as AuditTab[]).map((tab) => (

@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { getSkips, getTerminalSnapshot } from "../api/client";
-import type { SignalRow, SkipRow, TerminalStatus } from "../api/types";
+import {
+  buildPolyAlphaSignalFilters,
+  fetchPolyAlphaPromotions,
+  fetchPolyAlphaShadowSignals,
+  fetchPolyAlphaValidations,
+  getSkips,
+  getTerminalSnapshot
+} from "../api/client";
+import type {
+  PolyAlphaPromotionDecision,
+  PolyAlphaShadowSignal,
+  PolyAlphaValidationResult,
+  SignalRow,
+  SkipRow,
+  TerminalStatus
+} from "../api/types";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { StatusPill } from "../components/ui/StatusPill";
-import { mockSkips, mockTerminalSnapshot } from "../data/mockTerminalData";
+import {
+  mockPolyAlphaPromotionDecisions,
+  mockPolyAlphaShadowSignals,
+  mockPolyAlphaValidationResults,
+  mockSkips,
+  mockTerminalSnapshot
+} from "../data/mockTerminalData";
 
 function formatBps(value: number) {
   return `${value} bps`;
@@ -11,6 +31,10 @@ function formatBps(value: number) {
 
 function formatPercent(value: number) {
   return `${value}%`;
+}
+
+function formatDecimal(value: number) {
+  return value.toFixed(2);
 }
 
 function numericFeatureEntries(features?: Record<string, number>): Array<[string, number]> {
@@ -23,23 +47,43 @@ function numericFeatureEntries(features?: Record<string, number>): Array<[string
   );
 }
 
+type PolyAlphaSignalRow = PolyAlphaShadowSignal & {
+  validation?: PolyAlphaValidationResult;
+  promotion?: PolyAlphaPromotionDecision;
+};
+
 export function SignalsPage() {
   const [snapshot, setSnapshot] = useState<TerminalStatus>(mockTerminalSnapshot);
   const [skips, setSkips] = useState<SkipRow[]>(mockSkips);
+  const [polyAlphaShadowSignals, setPolyAlphaShadowSignals] =
+    useState<PolyAlphaShadowSignal[]>(mockPolyAlphaShadowSignals);
+  const [polyAlphaValidations, setPolyAlphaValidations] =
+    useState<PolyAlphaValidationResult[]>(mockPolyAlphaValidationResults);
+  const [polyAlphaPromotions, setPolyAlphaPromotions] =
+    useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
   const [selectedSignalId, setSelectedSignalId] = useState(mockTerminalSnapshot.signals[0]?.id ?? "");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([getTerminalSnapshot(), getSkips()])
-      .then(([nextSnapshot, nextSkips]) => {
+    Promise.all([
+      getTerminalSnapshot(),
+      getSkips(),
+      fetchPolyAlphaShadowSignals(),
+      fetchPolyAlphaValidations(),
+      fetchPolyAlphaPromotions()
+    ])
+      .then(([nextSnapshot, nextSkips, nextShadowSignals, nextValidations, nextPromotions]) => {
         if (!isMounted) {
           return;
         }
 
         setSnapshot(nextSnapshot);
         setSkips(nextSkips);
+        setPolyAlphaShadowSignals(nextShadowSignals);
+        setPolyAlphaValidations(nextValidations);
+        setPolyAlphaPromotions(nextPromotions);
         if (nextSnapshot.signals[0]) {
           setSelectedSignalId((current) => current || nextSnapshot.signals[0].id);
         }
@@ -62,6 +106,31 @@ export function SignalsPage() {
     [selectedSignalId, snapshot.signals]
   );
   const featureEntries = useMemo(() => numericFeatureEntries(selectedSignal?.features), [selectedSignal]);
+  const validationBySignal = useMemo(
+    () => new Map(polyAlphaValidations.map((validation) => [validation.shadowSignalId, validation])),
+    [polyAlphaValidations]
+  );
+  const promotionBySignal = useMemo(
+    () => new Map(polyAlphaPromotions.map((promotion) => [promotion.shadowSignalId, promotion])),
+    [polyAlphaPromotions]
+  );
+  const polyAlphaRows = useMemo<PolyAlphaSignalRow[]>(
+    () =>
+      polyAlphaShadowSignals.map((signal) => ({
+        ...signal,
+        validation: validationBySignal.get(signal.id),
+        promotion: promotionBySignal.get(signal.id)
+      })),
+    [polyAlphaShadowSignals, promotionBySignal, validationBySignal]
+  );
+  const polyAlphaFilters = useMemo(
+    () =>
+      buildPolyAlphaSignalFilters({
+        shadowStatuses: ["shadow", "validated", "promoted", "rejected", "expired", "watch"],
+        promotionDecisions: ["watch", "promote", "reject"]
+      }),
+    []
+  );
 
   const signalColumns: Array<DenseDataTableColumn<SignalRow>> = [
     {
@@ -111,6 +180,47 @@ export function SignalsPage() {
       key: "detail",
       header: "Detail",
       render: (row) => row.detail
+    }
+  ];
+
+  const polyAlphaColumns: Array<DenseDataTableColumn<PolyAlphaSignalRow>> = [
+    {
+      key: "signal",
+      header: "Signal",
+      render: (row) => row.id
+    },
+    {
+      key: "strategy",
+      header: "Strategy version",
+      render: (row) => row.strategyVersionId
+    },
+    {
+      key: "status",
+      header: "Opportunity status",
+      render: (row) => <StatusPill label={row.status} tone={row.status === "validated" ? "ok" : "warn"} />
+    },
+    {
+      key: "decision",
+      header: "Promotion decision",
+      render: (row) => row.promotion?.decision ?? ""
+    },
+    {
+      key: "clv",
+      header: "CLV",
+      align: "right",
+      render: (row) => (row.validation ? `CLV ${formatDecimal(row.validation.closingLineValue)}` : "")
+    },
+    {
+      key: "brier",
+      header: "Brier",
+      align: "right",
+      render: (row) => (row.validation ? `Brier ${formatDecimal(row.validation.brierScore)}` : "")
+    },
+    {
+      key: "calibration",
+      header: "Calibration",
+      align: "right",
+      render: (row) => (row.validation ? `Calibration ${formatDecimal(row.validation.calibrationError)}` : "")
     }
   ];
 
@@ -173,6 +283,44 @@ export function SignalsPage() {
                 <StatusPill label={selectedSignal.freshnessLabel} tone="warn" />
               </div>
             ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="page-grid terminal-page-grid-compact">
+        <div className="page-section">
+          <h2>Poly Alpha shadow signals</h2>
+          <DenseDataTable
+            caption="Poly Alpha shadow signals"
+            columns={polyAlphaColumns}
+            rows={polyAlphaRows}
+            getRowKey={(row) => row.id}
+            emptyTitle="No Poly Alpha shadow signals"
+            emptyDescription="No shadow signals are available."
+          />
+        </div>
+
+        <div className="detail-stack">
+          <div className="page-section">
+            <h2>Shadow status filters</h2>
+            <div className="detail-badges" aria-label="Shadow status filters">
+              {polyAlphaFilters.shadowStatuses.map((status) => (
+                <StatusPill key={status} label={status} tone={status === "validated" ? "ok" : "warn"} />
+              ))}
+            </div>
+          </div>
+
+          <div className="page-section">
+            <h2>Promotion decision filters</h2>
+            <div className="detail-badges" aria-label="Promotion decision filters">
+              {polyAlphaFilters.promotionDecisions.map((decision) => (
+                <StatusPill
+                  key={decision}
+                  label={decision}
+                  tone={decision === "promote" ? "ok" : decision === "reject" ? "danger" : "warn"}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>

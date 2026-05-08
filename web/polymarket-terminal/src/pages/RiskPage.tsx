@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveTradeProposal,
+  fetchPolyAlphaPromotions,
   getAuditEvents,
   getRiskLimits,
   getSkips,
@@ -8,12 +9,13 @@ import {
   rejectTradeProposal,
   triggerKillSwitch
 } from "../api/client";
-import type { AuditEvent, RiskLimit, SkipRow, TradeProposal } from "../api/types";
+import type { AuditEvent, PolyAlphaPromotionDecision, RiskLimit, SkipRow, TradeProposal } from "../api/types";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { StatusPill } from "../components/ui/StatusPill";
 import { TerminalButton } from "../components/ui/TerminalButton";
 import {
   mockAuditEvents,
+  mockPolyAlphaPromotionDecisions,
   mockRiskLimits,
   mockSkips,
   mockTradeProposals
@@ -29,17 +31,19 @@ type RiskData = {
   riskLimits: RiskLimit[];
   auditEvents: AuditEvent[];
   skips: SkipRow[];
+  promotions: PolyAlphaPromotionDecision[];
 };
 
 async function fetchRiskData(): Promise<RiskData> {
-  const [proposals, riskLimits, auditEvents, skips] = await Promise.all([
+  const [proposals, riskLimits, auditEvents, skips, promotions] = await Promise.all([
     getTradeProposals(),
     getRiskLimits(),
     getAuditEvents(),
-    getSkips()
+    getSkips(),
+    fetchPolyAlphaPromotions()
   ]);
 
-  return { proposals, riskLimits, auditEvents, skips };
+  return { proposals, riskLimits, auditEvents, skips, promotions };
 }
 
 function deriveDeploymentId(proposals: TradeProposal[], auditEvents: AuditEvent[]): string {
@@ -99,6 +103,7 @@ export function RiskPage() {
   const [riskLimits, setRiskLimits] = useState<RiskLimit[]>(mockRiskLimits);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(mockAuditEvents);
   const [skips, setSkips] = useState<SkipRow[]>(mockSkips);
+  const [promotions, setPromotions] = useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
   const [isLoading, setIsLoading] = useState(true);
   const [controlDeploymentId, setControlDeploymentId] = useState(() =>
     deriveDeploymentId(mockTradeProposals, mockAuditEvents)
@@ -110,6 +115,7 @@ export function RiskPage() {
     setRiskLimits(nextData.riskLimits);
     setAuditEvents(nextData.auditEvents);
     setSkips(nextData.skips);
+    setPromotions(nextData.promotions);
     setControlDeploymentId(deriveDeploymentId(nextData.proposals, nextData.auditEvents));
   }, []);
 
@@ -159,6 +165,10 @@ export function RiskPage() {
         }))
     ].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
     [auditEvents, skips]
+  );
+  const polyAlphaRiskQueue = useMemo(
+    () => promotions.filter((promotion) => promotion.decision === "promote" && promotion.proposalId.trim() !== ""),
+    [promotions]
   );
 
   async function handleApprove(proposal: TradeProposal) {
@@ -277,6 +287,34 @@ export function RiskPage() {
     }
   ];
 
+  const polyAlphaRiskColumns: Array<DenseDataTableColumn<PolyAlphaPromotionDecision>> = [
+    {
+      key: "proposal",
+      header: "Proposal",
+      render: (row) => row.proposalId
+    },
+    {
+      key: "opportunity",
+      header: "Opportunity",
+      render: (row) => row.opportunityId
+    },
+    {
+      key: "strategy",
+      header: "Strategy",
+      render: (row) => row.strategyVersionId
+    },
+    {
+      key: "decision",
+      header: "Decision",
+      render: (row) => <StatusPill label={row.decision} tone="ok" />
+    },
+    {
+      key: "reason",
+      header: "Reason",
+      render: (row) => row.reason
+    }
+  ];
+
   return (
     <section className="workspace-panel page-stack" aria-busy={isLoading}>
       <div className="page-header">
@@ -321,6 +359,18 @@ export function RiskPage() {
           getRowKey={(row) => row.id}
           emptyTitle="No proposals"
           emptyDescription="No paper proposals require review."
+        />
+      </div>
+
+      <div className="page-section">
+        <h2>Poly Alpha Risk queue</h2>
+        <DenseDataTable
+          caption="Poly Alpha Risk queue"
+          columns={polyAlphaRiskColumns}
+          rows={polyAlphaRiskQueue}
+          getRowKey={(row) => row.id}
+          emptyTitle="No Poly Alpha promoted proposals"
+          emptyDescription="No promoted Poly Alpha paper proposals are ready for risk review."
         />
       </div>
 

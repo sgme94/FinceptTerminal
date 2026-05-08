@@ -17,11 +17,16 @@ import {
   getPaperTrades,
   getSignals,
   getSkips,
-  getTradeProposals
+  getTradeProposals,
+  fetchPolyAlphaEvidencePacks,
+  fetchPolyAlphaPromotions
 } from "../api/client";
+import { mockPolyAlphaEvidencePacks, mockPolyAlphaPromotionDecisions } from "../data/mockTerminalData";
 import { AuditPage } from "./AuditPage";
 
 vi.mock("../api/client", () => ({
+  fetchPolyAlphaEvidencePacks: vi.fn(),
+  fetchPolyAlphaPromotions: vi.fn(),
   getAuditEvents: vi.fn(),
   getCandidates: vi.fn(),
   getPaperPositions: vi.fn(),
@@ -79,6 +84,32 @@ const auditEvents: AuditEvent[] = [
     before: { status: "proposed" },
     after: { status: "rejected" },
     createdAt: "2026-05-06T10:15:00.000Z"
+  },
+  {
+    source: "api",
+    id: "audit-explore",
+    deploymentId: "dep-test",
+    level: "info",
+    message: "exploration decision accepted for poly-opp-fed-june",
+    actor: "agent",
+    action: "exploration_decision",
+    result: "accepted",
+    entityType: "poly_alpha_opportunity",
+    entityId: "poly-opp-fed-june",
+    createdAt: "2026-05-06T10:16:00.000Z"
+  },
+  {
+    source: "api",
+    id: "audit-paper-fill-skipped",
+    deploymentId: "dep-test",
+    level: "info",
+    message: "paper_fill_skipped because promotion was watch",
+    actor: "system",
+    action: "paper_fill_skipped",
+    result: "skipped",
+    entityType: "poly_alpha_opportunity",
+    entityId: "poly-opp-fed-june",
+    createdAt: "2026-05-06T10:17:00.000Z"
   }
 ];
 
@@ -188,6 +219,8 @@ describe("AuditPage", () => {
     vi.mocked(getSignals).mockResolvedValue(signals);
     vi.mocked(getSkips).mockResolvedValue(skips);
     vi.mocked(getTradeProposals).mockResolvedValue(proposals);
+    vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue(mockPolyAlphaEvidencePacks);
+    vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue(mockPolyAlphaPromotionDecisions);
   });
 
   it("displays filters, control actions, proposal transitions, tabs, and append-only warning", async () => {
@@ -275,5 +308,18 @@ describe("AuditPage", () => {
     await user.click(screen.getByRole("tab", { name: /skips/i }));
     expect(screen.getByText("skip-1")).toBeInTheDocument();
     expect(screen.getByText("stale_orderbook")).toBeInTheDocument();
+  });
+
+  it("shows a Poly Alpha evidence chain including exploration decisions and paper fill skips", async () => {
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+
+    expect((await screen.findAllByText("paper_fill_skipped")).length).toBeGreaterThan(0);
+    const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
+    expect(within(chain).getByText("poly-evidence-fed")).toBeInTheDocument();
+    expect(within(chain).getByText("exploration_decision")).toBeInTheDocument();
+    expect(within(chain).getByText("paper_fill_skipped")).toBeInTheDocument();
+    expect(within(chain).getByText("poly-promotion-fed")).toBeInTheDocument();
   });
 });

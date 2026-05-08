@@ -1,12 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import { getTerminalSnapshot } from "../api/client";
-import type { MarketCandidate, OrderBookSnapshot, TerminalStatus } from "../api/types";
+import {
+  fetchPolyAlphaEvidencePacks,
+  fetchPolyAlphaLinks,
+  fetchPolyAlphaMarketSnapshots,
+  fetchPolyAlphaOpportunities,
+  getTerminalSnapshot
+} from "../api/client";
+import type {
+  MarketCandidate,
+  OrderBookSnapshot,
+  PolyAlphaEventMarketLink,
+  PolyAlphaEvidencePack,
+  PolyAlphaMarketSnapshot,
+  PolyAlphaOpportunity,
+  TerminalStatus
+} from "../api/types";
 import { DenseDataTable, type DenseDataTableColumn } from "../components/ui/DenseDataTable";
 import { OrderBookSummary } from "../components/ui/OrderBookSummary";
 import { ProbabilityChart } from "../components/ui/ProbabilityChart";
 import { StatusPill } from "../components/ui/StatusPill";
 import { TerminalButton } from "../components/ui/TerminalButton";
-import { mockTerminalSnapshot } from "../data/mockTerminalData";
+import {
+  mockPolyAlphaEvidencePacks,
+  mockPolyAlphaLinks,
+  mockPolyAlphaMarketSnapshots,
+  mockPolyAlphaOpportunities,
+  mockTerminalSnapshot
+} from "../data/mockTerminalData";
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -20,6 +40,10 @@ function formatPercent(value: number) {
   return `${value}%`;
 }
 
+function formatLinkConfidence(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 function buildOrderBook(selectedMarketId: string, baseBook: OrderBookSnapshot): OrderBookSnapshot {
   return {
     ...baseBook,
@@ -27,8 +51,21 @@ function buildOrderBook(selectedMarketId: string, baseBook: OrderBookSnapshot): 
   };
 }
 
+type PolyAlphaMarketRow = {
+  opportunity: PolyAlphaOpportunity;
+  links: PolyAlphaEventMarketLink[];
+  evidence?: PolyAlphaEvidencePack;
+  snapshot?: PolyAlphaMarketSnapshot;
+};
+
 export function MarketsPage() {
   const [snapshot, setSnapshot] = useState<TerminalStatus>(mockTerminalSnapshot);
+  const [polyAlphaOpportunities, setPolyAlphaOpportunities] = useState<PolyAlphaOpportunity[]>(mockPolyAlphaOpportunities);
+  const [polyAlphaLinks, setPolyAlphaLinks] = useState<PolyAlphaEventMarketLink[]>(mockPolyAlphaLinks);
+  const [polyAlphaEvidencePacks, setPolyAlphaEvidencePacks] =
+    useState<PolyAlphaEvidencePack[]>(mockPolyAlphaEvidencePacks);
+  const [polyAlphaMarketSnapshots, setPolyAlphaMarketSnapshots] =
+    useState<PolyAlphaMarketSnapshot[]>(mockPolyAlphaMarketSnapshots);
   const [selectedMarketId, setSelectedMarketId] = useState(mockTerminalSnapshot.markets[0]?.id ?? "");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [searchFilter, setSearchFilter] = useState("");
@@ -37,13 +74,23 @@ export function MarketsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    getTerminalSnapshot()
-      .then((nextSnapshot) => {
+    Promise.all([
+      getTerminalSnapshot(),
+      fetchPolyAlphaOpportunities(),
+      fetchPolyAlphaLinks(),
+      fetchPolyAlphaEvidencePacks(),
+      fetchPolyAlphaMarketSnapshots()
+    ])
+      .then(([nextSnapshot, nextOpportunities, nextLinks, nextEvidencePacks, nextMarketSnapshots]) => {
         if (!isMounted) {
           return;
         }
 
         setSnapshot(nextSnapshot);
+        setPolyAlphaOpportunities(nextOpportunities);
+        setPolyAlphaLinks(nextLinks);
+        setPolyAlphaEvidencePacks(nextEvidencePacks);
+        setPolyAlphaMarketSnapshots(nextMarketSnapshots);
         if (nextSnapshot.markets[0]) {
           setSelectedMarketId((current) => current || nextSnapshot.markets[0].id);
         }
@@ -88,6 +135,21 @@ export function MarketsPage() {
     [filteredMarkets, selectedMarketId, snapshot.markets]
   );
 
+  const polyAlphaRows = useMemo<PolyAlphaMarketRow[]>(
+    () =>
+      polyAlphaOpportunities.map((opportunity) => ({
+        opportunity,
+        links: polyAlphaLinks.filter((link) => link.venueMarketId === opportunity.venueMarketId),
+        evidence: polyAlphaEvidencePacks.find((pack) => pack.opportunityId === opportunity.id),
+        snapshot: polyAlphaMarketSnapshots.find(
+          (marketSnapshot) =>
+            marketSnapshot.venueMarketId === opportunity.venueMarketId &&
+            marketSnapshot.outcomeId === opportunity.outcomeId
+        )
+      })),
+    [polyAlphaEvidencePacks, polyAlphaLinks, polyAlphaMarketSnapshots, polyAlphaOpportunities]
+  );
+
   const candidateColumns: Array<DenseDataTableColumn<MarketCandidate>> = [
     {
       key: "select",
@@ -123,6 +185,65 @@ export function MarketsPage() {
       header: "Liquidity",
       align: "right",
       render: (row) => formatUsd(row.liquidityUsd)
+    }
+  ];
+
+  const polyAlphaColumns: Array<DenseDataTableColumn<PolyAlphaMarketRow>> = [
+    {
+      key: "market",
+      header: "Market",
+      render: (row) => row.opportunity.venueMarketId
+    },
+    {
+      key: "linked",
+      header: "Linked events",
+      render: (row) => `${new Set(row.links.map((link) => link.eventId)).size} linked event`
+    },
+    {
+      key: "evidence",
+      header: "Latest evidence",
+      render: (row) => row.evidence?.latestObservedAt ?? ""
+    },
+    {
+      key: "probability",
+      header: "Market vs estimate",
+      render: (row) =>
+        `${formatPercent(row.opportunity.marketProbability)} vs ${formatPercent(row.opportunity.estimatedProbability)}`
+    },
+    {
+      key: "liquidity",
+      header: "Liquidity",
+      align: "right",
+      render: (row) => (row.snapshot ? formatUsd(row.snapshot.liquidity) : "")
+    },
+    {
+      key: "spread",
+      header: "Spread",
+      align: "right",
+      render: (row) => row.snapshot?.spread.toFixed(2) ?? ""
+    },
+    {
+      key: "freshness",
+      header: "Order book freshness",
+      render: (row) => row.snapshot?.fetchedAt ?? ""
+    },
+    {
+      key: "confidence",
+      header: "Link confidence",
+      render: (row) =>
+        row.links.length > 0 ? formatLinkConfidence(Math.max(...row.links.map((link) => link.linkConfidence))) : ""
+    },
+    {
+      key: "action",
+      header: "Action",
+      render: (row) => (
+        <TerminalButton
+          aria-label={`Send ${row.opportunity.venueMarketId} to research/Cockpit`}
+          onClick={() => setSelectedMarketId(row.opportunity.venueMarketId)}
+        >
+          Research/Cockpit
+        </TerminalButton>
+      )
     }
   ];
 
@@ -204,6 +325,18 @@ export function MarketsPage() {
             </div>
           ) : null}
         </div>
+      </div>
+
+      <div className="page-section">
+        <h2>Poly Alpha market links</h2>
+        <DenseDataTable
+          caption="Poly Alpha market links"
+          columns={polyAlphaColumns}
+          rows={polyAlphaRows}
+          getRowKey={(row) => row.opportunity.id}
+          emptyTitle="No Poly Alpha market links"
+          emptyDescription="No linked evidence or market snapshots are available."
+        />
       </div>
     </section>
   );

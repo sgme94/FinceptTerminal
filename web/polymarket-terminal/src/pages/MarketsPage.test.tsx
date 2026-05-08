@@ -1,7 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mockTerminalSnapshot } from "../data/mockTerminalData";
+import {
+  mockPolyAlphaEvidencePacks,
+  mockPolyAlphaLinks,
+  mockPolyAlphaMarketSnapshots,
+  mockPolyAlphaOpportunities,
+  mockTerminalSnapshot
+} from "../data/mockTerminalData";
 import { MarketsPage } from "./MarketsPage";
 
 vi.mock("lightweight-charts", () => ({
@@ -17,6 +23,10 @@ vi.mock("lightweight-charts", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  fetchPolyAlphaEvidencePacks: vi.fn(),
+  fetchPolyAlphaLinks: vi.fn(),
+  fetchPolyAlphaMarketSnapshots: vi.fn(),
+  fetchPolyAlphaOpportunities: vi.fn(),
   getTerminalSnapshot: vi.fn()
 }));
 
@@ -24,6 +34,10 @@ describe("MarketsPage", () => {
   beforeEach(async () => {
     const client = await import("../api/client");
     vi.mocked(client.getTerminalSnapshot).mockResolvedValue(mockTerminalSnapshot);
+    vi.mocked(client.fetchPolyAlphaOpportunities).mockResolvedValue(mockPolyAlphaOpportunities);
+    vi.mocked(client.fetchPolyAlphaLinks).mockResolvedValue(mockPolyAlphaLinks);
+    vi.mocked(client.fetchPolyAlphaEvidencePacks).mockResolvedValue(mockPolyAlphaEvidencePacks);
+    vi.mocked(client.fetchPolyAlphaMarketSnapshots).mockResolvedValue(mockPolyAlphaMarketSnapshots);
   });
 
   it("renders filters, candidates, selected market detail, chart, and order book", async () => {
@@ -37,12 +51,24 @@ describe("MarketsPage", () => {
     expect(within(candidateTable).getByText("Macro")).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Selected market" })).toBeInTheDocument();
-    expect(screen.getByText("mkt-fed-2026")).toBeInTheDocument();
+    expect(screen.getAllByText("mkt-fed-2026").length).toBeGreaterThan(0);
     expect(screen.getByTestId("probability-chart")).toHaveAttribute(
       "aria-label",
       "mkt-fed-2026 probability history"
     );
     expect(screen.getByLabelText("Order book summary")).toBeInTheDocument();
+
+    const polyAlphaTable = await screen.findByRole("table", { name: "Poly Alpha market links" });
+    expect(within(polyAlphaTable).getAllByText("1 linked event").length).toBeGreaterThan(0);
+    expect(within(polyAlphaTable).getByText("2026-05-06T10:28:00.000Z")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("58% vs 64%")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("$126,000")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getAllByText("0.02").length).toBeGreaterThan(0);
+    expect(within(polyAlphaTable).getByText("2026-05-06T10:28:30.000Z")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("94%")).toBeInTheDocument();
+    expect(
+      within(polyAlphaTable).getByRole("button", { name: "Send mkt-fed-2026 to research/Cockpit" })
+    ).toBeInTheDocument();
   });
 
   it("updates the selected market detail from the candidate table", async () => {
@@ -53,7 +79,7 @@ describe("MarketsPage", () => {
     await user.click(screen.getByRole("button", { name: "Select mkt-btc-100k" }));
 
     expect(screen.getByRole("heading", { name: "Selected market" })).toBeInTheDocument();
-    expect(screen.getByText("mkt-btc-100k")).toBeInTheDocument();
+    expect(screen.getAllByText("mkt-btc-100k").length).toBeGreaterThan(0);
     expect(screen.getByText("Bitcoin above 100k on May 31?")).toBeInTheDocument();
   });
 });
