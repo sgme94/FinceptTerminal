@@ -317,7 +317,13 @@ export type PolyAlphaMarketSnapshot = DataQuality & {
   createdAt: string;
 };
 
-export type PolyAlphaShadowSignalStatus = "shadow" | "validated" | "rejected" | "promoted" | "expired";
+export type PolyAlphaShadowSignalStatus =
+  | "shadow"
+  | "validated"
+  | "rejected"
+  | "promoted"
+  | "expired"
+  | "unknown";
 
 export type PolyAlphaShadowSignal = DataQuality & {
   id: string;
@@ -336,6 +342,7 @@ export type PolyAlphaShadowSignal = DataQuality & {
   edge: number;
   confidence: number;
   status: PolyAlphaShadowSignalStatus;
+  rawStatus?: string;
   createdAt: string;
   expiresAt: string;
 };
@@ -370,7 +377,7 @@ export type PolyAlphaValidationResult = DataQuality & {
   createdAt: string;
 };
 
-export type PolyAlphaPromotionDecisionValue = "watch" | "promote" | "reject";
+export type PolyAlphaPromotionDecisionValue = "watch" | "promote" | "reject" | "unknown";
 
 export type PolyAlphaPromotionDecision = DataQuality & {
   id: string;
@@ -378,6 +385,7 @@ export type PolyAlphaPromotionDecision = DataQuality & {
   shadowSignalId: string;
   strategyVersionId: string;
   decision: PolyAlphaPromotionDecisionValue;
+  rawDecision?: string;
   reason: string;
   predictionMetrics: Record<string, unknown>;
   tradingMetrics: Record<string, unknown>;

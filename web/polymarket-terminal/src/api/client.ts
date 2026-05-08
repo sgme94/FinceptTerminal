@@ -671,7 +671,9 @@ function mapPolyAlphaMarketSnapshot(item: PolyAlphaItemResponse): PolyAlphaMarke
   };
 }
 
-function isPolyAlphaShadowSignalStatus(value: string): value is PolyAlphaShadowSignalStatus {
+function isPolyAlphaFilterableShadowSignalStatus(
+  value: string
+): value is Exclude<PolyAlphaShadowSignalStatus, "unknown"> {
   return (
     value === "shadow" ||
     value === "validated" ||
@@ -683,10 +685,12 @@ function isPolyAlphaShadowSignalStatus(value: string): value is PolyAlphaShadowS
 
 function mapPolyAlphaShadowSignalStatus(value: unknown): PolyAlphaShadowSignalStatus {
   const status = stringValue(value);
-  return isPolyAlphaShadowSignalStatus(status) ? status : "shadow";
+  return isPolyAlphaFilterableShadowSignalStatus(status) ? status : "unknown";
 }
 
 function mapPolyAlphaShadowSignal(item: PolyAlphaItemResponse): PolyAlphaShadowSignal {
+  const rawStatus = stringValue(item.status);
+
   return {
     id: stringValue(item.shadow_signal_id ?? item.signal_id ?? item.id),
     opportunityId: stringValue(item.opportunity_id),
@@ -703,7 +707,8 @@ function mapPolyAlphaShadowSignal(item: PolyAlphaItemResponse): PolyAlphaShadowS
     estimatedProbability: probabilityValue(item.estimated_probability),
     edge: numberValue(item.edge),
     confidence: probabilityValue(item.confidence),
-    status: mapPolyAlphaShadowSignalStatus(item.status),
+    status: mapPolyAlphaShadowSignalStatus(rawStatus),
+    rawStatus,
     createdAt: stringValue(item.created_at),
     expiresAt: stringValue(item.expires_at),
     source: "api"
@@ -743,22 +748,27 @@ function mapPolyAlphaValidation(item: PolyAlphaItemResponse): PolyAlphaValidatio
   };
 }
 
-function isPolyAlphaPromotionDecision(value: string): value is PolyAlphaPromotionDecisionValue {
+function isPolyAlphaFilterablePromotionDecision(
+  value: string
+): value is Exclude<PolyAlphaPromotionDecisionValue, "unknown"> {
   return value === "watch" || value === "promote" || value === "reject";
 }
 
 function mapPolyAlphaPromotionDecisionValue(value: unknown): PolyAlphaPromotionDecisionValue {
   const decision = stringValue(value);
-  return isPolyAlphaPromotionDecision(decision) ? decision : "watch";
+  return isPolyAlphaFilterablePromotionDecision(decision) ? decision : "unknown";
 }
 
 function mapPolyAlphaPromotion(item: PolyAlphaItemResponse): PolyAlphaPromotionDecision {
+  const rawDecision = stringValue(item.decision);
+
   return {
     id: stringValue(item.promotion_id ?? item.id),
     opportunityId: stringValue(item.opportunity_id),
     shadowSignalId: stringValue(item.shadow_signal_id ?? item.signal_id),
     strategyVersionId: stringValue(item.strategy_version_id),
-    decision: mapPolyAlphaPromotionDecisionValue(item.decision),
+    decision: mapPolyAlphaPromotionDecisionValue(rawDecision),
+    rawDecision,
     reason: stringValue(item.reason),
     predictionMetrics: recordValue(item.prediction_metrics),
     tradingMetrics: recordValue(item.trading_metrics),
@@ -776,12 +786,19 @@ async function fetchPolyAlphaResource<T>(
   mapper: (item: PolyAlphaItemResponse) => T,
   fallback: T[]
 ): Promise<T[]> {
+  let body: PolyAlphaListResponse;
+
   try {
-    const body = await fetchJson<PolyAlphaListResponse>(path);
-    return (body.items ?? []).map(mapper);
+    body = await fetchJson<PolyAlphaListResponse>(path);
   } catch {
     return fallback;
   }
+
+  if (!Array.isArray(body.items)) {
+    throw new Error(`Invalid poly alpha response for ${path}: items must be an array`);
+  }
+
+  return body.items.map(mapper);
 }
 
 export async function getBotStatus(): Promise<BotStatus> {
@@ -886,8 +903,8 @@ export function buildPolyAlphaSignalFilters(input: {
   promotionDecisions?: string[];
 }): PolyAlphaSignalFilters {
   return {
-    shadowStatuses: (input.shadowStatuses ?? []).filter(isPolyAlphaShadowSignalStatus),
-    promotionDecisions: (input.promotionDecisions ?? []).filter(isPolyAlphaPromotionDecision)
+    shadowStatuses: (input.shadowStatuses ?? []).filter(isPolyAlphaFilterableShadowSignalStatus),
+    promotionDecisions: (input.promotionDecisions ?? []).filter(isPolyAlphaFilterablePromotionDecision)
   };
 }
 

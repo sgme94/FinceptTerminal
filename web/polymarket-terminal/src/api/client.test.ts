@@ -12,6 +12,8 @@ import {
   fetchPolyAlphaResearchRuns,
   fetchPolyAlphaScanResults,
   fetchPolyAlphaScanRuns,
+  fetchPolyAlphaShadowSignals,
+  fetchPolyAlphaPromotions,
   getAuditEvents,
   getBotStatus,
   getCandidates,
@@ -891,11 +893,66 @@ describe("terminal api client", () => {
 
   it("keeps poly alpha F3 shadow signal statuses separate from promotion decisions", () => {
     const filters = buildPolyAlphaSignalFilters({
-      shadowStatuses: ["shadow", "validated", "rejected", "promoted", "expired", "watch"],
-      promotionDecisions: ["watch", "promote", "reject", "defer"]
+      shadowStatuses: ["shadow", "validated", "rejected", "promoted", "expired", "watch", "unknown"],
+      promotionDecisions: ["watch", "promote", "reject", "defer", "unknown"]
     });
 
     expect(filters.shadowStatuses).toEqual(["shadow", "validated", "rejected", "promoted", "expired"]);
     expect(filters.promotionDecisions).toEqual(["watch", "promote", "reject"]);
+  });
+
+  it("maps unknown poly alpha shadow statuses and promotion decisions without disguising them", async () => {
+    const responseByUrl: Record<string, unknown> = {
+      "http://localhost:8765/api/poly-alpha/shadow-signals": {
+        items: [
+          {
+            shadow_signal_id: "shadow-unknown",
+            status: "retired"
+          },
+          {
+            shadow_signal_id: "shadow-missing"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/promotions": {
+        items: [
+          {
+            promotion_id: "promotion-unknown",
+            decision: "hold"
+          },
+          {
+            promotion_id: "promotion-missing"
+          }
+        ]
+      }
+    };
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(responseByUrl[url])
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchPolyAlphaShadowSignals()).resolves.toEqual([
+      expect.objectContaining({ id: "shadow-unknown", status: "unknown", rawStatus: "retired" }),
+      expect.objectContaining({ id: "shadow-missing", status: "unknown", rawStatus: "" })
+    ]);
+    await expect(fetchPolyAlphaPromotions()).resolves.toEqual([
+      expect.objectContaining({ id: "promotion-unknown", decision: "unknown", rawDecision: "hold" }),
+      expect.objectContaining({ id: "promotion-missing", decision: "unknown", rawDecision: "" })
+    ]);
+  });
+
+  it("rejects invalid poly alpha list response shapes instead of falling back to mock data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ items: {} })
+      })
+    );
+
+    await expect(fetchPolyAlphaOpportunities()).rejects.toThrow("Invalid poly alpha response");
   });
 });
