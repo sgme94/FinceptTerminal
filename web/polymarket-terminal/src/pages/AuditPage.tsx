@@ -4,6 +4,8 @@ import {
   fetchPolyAlphaEvidencePacks,
   fetchPolyAlphaExplorationDecisions,
   fetchPolyAlphaPromotions,
+  fetchPolyAlphaResearchRuns,
+  fetchPolyAlphaShadowSignals,
   getAuditEvents,
   getCandidates,
   getPaperPositions,
@@ -21,6 +23,8 @@ import type {
   PolyAlphaEvidencePack,
   PolyAlphaExplorationDecision,
   PolyAlphaPromotionDecision,
+  PolyAlphaResearchRun,
+  PolyAlphaShadowSignal,
   SignalRow,
   SkipRow,
   TradeProposal
@@ -34,6 +38,8 @@ import {
   mockPolyAlphaEvidencePacks,
   mockPolyAlphaExplorationDecisions,
   mockPolyAlphaPromotionDecisions,
+  mockPolyAlphaResearchRuns,
+  mockPolyAlphaShadowSignals,
   mockSignals,
   mockSkips,
   mockTradeProposals
@@ -244,6 +250,10 @@ export function AuditPage() {
     useState<PolyAlphaEvidencePack[]>(mockPolyAlphaEvidencePacks);
   const [polyAlphaPromotions, setPolyAlphaPromotions] =
     useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
+  const [polyAlphaResearchRuns, setPolyAlphaResearchRuns] =
+    useState<PolyAlphaResearchRun[]>(mockPolyAlphaResearchRuns);
+  const [polyAlphaShadowSignals, setPolyAlphaShadowSignals] =
+    useState<PolyAlphaShadowSignal[]>(mockPolyAlphaShadowSignals);
   const [polyAlphaExplorationDecisions, setPolyAlphaExplorationDecisions] =
     useState<PolyAlphaExplorationDecision[]>(mockPolyAlphaExplorationDecisions);
   const [polyAlphaAuditEvents, setPolyAlphaAuditEvents] =
@@ -268,7 +278,9 @@ export function AuditPage() {
       fetchPolyAlphaEvidencePacks(),
       fetchPolyAlphaExplorationDecisions(),
       fetchPolyAlphaAuditEvents(),
-      fetchPolyAlphaPromotions()
+      fetchPolyAlphaPromotions(),
+      fetchPolyAlphaResearchRuns(),
+      fetchPolyAlphaShadowSignals()
     ])
       .then(
         ([
@@ -282,7 +294,9 @@ export function AuditPage() {
           nextEvidencePacks,
           nextExplorationDecisions,
           nextPolyAlphaAuditEvents,
-          nextPromotions
+          nextPromotions,
+          nextResearchRuns,
+          nextShadowSignals
         ]) => {
         if (isMounted) {
           setEvents(nextEvents);
@@ -296,6 +310,8 @@ export function AuditPage() {
           setPolyAlphaExplorationDecisions(nextExplorationDecisions);
           setPolyAlphaAuditEvents(nextPolyAlphaAuditEvents);
           setPolyAlphaPromotions(nextPromotions);
+          setPolyAlphaResearchRuns(nextResearchRuns);
+          setPolyAlphaShadowSignals(nextShadowSignals);
         }
       })
       .finally(() => {
@@ -375,17 +391,28 @@ export function AuditPage() {
                 event.action?.startsWith("exploration") &&
                 (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
             );
-        const polyAlphaPaperFillEvent = polyAlphaAuditEvents.find(
-          (event) =>
-            isPaperFillAction(event.action) &&
-            (event.opportunityId === pack.opportunityId || event.entityId === pack.opportunityId)
+        const packRunIds = new Set(
+          polyAlphaResearchRuns
+            .filter((run) => run.evidencePackId === pack.id && run.opportunityId === pack.opportunityId)
+            .map((run) => run.id)
         );
-        const generalPaperFillEvent = events.find(
-          (event) =>
-            isPaperFillAction(event.action) &&
-            (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
+        const packShadowSignalIds = new Set(
+          polyAlphaShadowSignals
+            .filter((signal) => packRunIds.has(signal.runId) && signal.opportunityId === pack.opportunityId)
+            .map((signal) => signal.id)
         );
-        const promotion = polyAlphaPromotions.find((decision) => decision.opportunityId === pack.opportunityId);
+        const promotion = polyAlphaPromotions.find(
+          (decision) => decision.opportunityId === pack.opportunityId && packShadowSignalIds.has(decision.shadowSignalId)
+        );
+        const proposalId = promotion?.proposalId ?? "";
+        const polyAlphaPaperFillEvent = proposalId
+          ? polyAlphaAuditEvents.find(
+              (event) => isPaperFillAction(event.action) && event.entityId === proposalId
+            )
+          : undefined;
+        const generalPaperFillEvent = proposalId
+          ? events.find((event) => isPaperFillAction(event.action) && event.entityId === proposalId)
+          : undefined;
         const paperFillAction = polyAlphaPaperFillEvent?.action ?? generalPaperFillEvent?.action ?? "";
 
         return {
@@ -399,7 +426,15 @@ export function AuditPage() {
           promotionId: promotion?.id ?? ""
         };
       }),
-    [events, polyAlphaAuditEvents, polyAlphaEvidencePacks, polyAlphaExplorationDecisions, polyAlphaPromotions]
+    [
+      events,
+      polyAlphaAuditEvents,
+      polyAlphaEvidencePacks,
+      polyAlphaExplorationDecisions,
+      polyAlphaPromotions,
+      polyAlphaResearchRuns,
+      polyAlphaShadowSignals
+    ]
   );
 
   return (

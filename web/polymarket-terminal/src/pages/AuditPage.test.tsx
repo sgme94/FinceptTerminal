@@ -8,6 +8,8 @@ import type {
   PaperTrade,
   PolyAlphaAuditEvent,
   PolyAlphaExplorationDecision,
+  PolyAlphaResearchRun,
+  PolyAlphaShadowSignal,
   SignalRow,
   SkipRow,
   TradeProposal
@@ -23,9 +25,16 @@ import {
   getTradeProposals,
   fetchPolyAlphaEvidencePacks,
   fetchPolyAlphaExplorationDecisions,
-  fetchPolyAlphaPromotions
+  fetchPolyAlphaPromotions,
+  fetchPolyAlphaResearchRuns,
+  fetchPolyAlphaShadowSignals
 } from "../api/client";
-import { mockPolyAlphaEvidencePacks, mockPolyAlphaPromotionDecisions } from "../data/mockTerminalData";
+import {
+  mockPolyAlphaEvidencePacks,
+  mockPolyAlphaPromotionDecisions,
+  mockPolyAlphaResearchRuns,
+  mockPolyAlphaShadowSignals
+} from "../data/mockTerminalData";
 import { AuditPage } from "./AuditPage";
 
 vi.mock("../api/client", () => ({
@@ -33,6 +42,8 @@ vi.mock("../api/client", () => ({
   fetchPolyAlphaEvidencePacks: vi.fn(),
   fetchPolyAlphaExplorationDecisions: vi.fn(),
   fetchPolyAlphaPromotions: vi.fn(),
+  fetchPolyAlphaResearchRuns: vi.fn(),
+  fetchPolyAlphaShadowSignals: vi.fn(),
   getAuditEvents: vi.fn(),
   getCandidates: vi.fn(),
   getPaperPositions: vi.fn(),
@@ -235,8 +246,8 @@ const apiPolyAlphaAuditEvents: PolyAlphaAuditEvent[] = [
     source: "api",
     id: "api-paper-fill-skipped",
     action: "paper_fill_skipped",
-    entityType: "opportunity",
-    entityId: "poly-opp-fed-june",
+    entityType: "proposal",
+    entityId: "prop-poly-fed",
     opportunityId: "poly-opp-fed-june",
     strategyVersionId: "strategy-v1",
     actorType: "system",
@@ -264,6 +275,8 @@ describe("AuditPage", () => {
     vi.mocked(fetchPolyAlphaExplorationDecisions).mockResolvedValue(apiExplorationDecisions);
     vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([]);
     vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue(mockPolyAlphaPromotionDecisions);
+    vi.mocked(fetchPolyAlphaResearchRuns).mockResolvedValue(mockPolyAlphaResearchRuns);
+    vi.mocked(fetchPolyAlphaShadowSignals).mockResolvedValue(mockPolyAlphaShadowSignals);
   });
 
   it("displays filters, control actions, proposal transitions, tabs, and append-only warning", async () => {
@@ -354,6 +367,9 @@ describe("AuditPage", () => {
   });
 
   it("shows a Poly Alpha evidence chain including exploration decisions and paper fill skips", async () => {
+    vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue([
+      { ...mockPolyAlphaPromotionDecisions[0], decision: "promote", proposalId: "prop-poly-fed" }
+    ]);
     vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
       {
         source: "api",
@@ -389,6 +405,9 @@ describe("AuditPage", () => {
 
   it("loads Poly Alpha exploration and audit resources when general audit omits the evidence chain", async () => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue([
+      { ...mockPolyAlphaPromotionDecisions[0], decision: "promote", proposalId: "prop-poly-fed" }
+    ]);
     vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue(apiPolyAlphaAuditEvents);
 
     render(<AuditPage />);
@@ -420,13 +439,16 @@ describe("AuditPage", () => {
 
   it("shows recorded paper fills in the Poly Alpha evidence chain", async () => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue([
+      { ...mockPolyAlphaPromotionDecisions[0], decision: "promote", proposalId: "prop-poly-fed" }
+    ]);
     vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
       {
         source: "api",
         id: "api-paper-fill-recorded",
         action: "paper_fill_recorded",
         entityType: "proposal",
-        entityId: "prop-1",
+        entityId: "prop-poly-fed",
         opportunityId: "poly-opp-fed-june",
         strategyVersionId: "strategy-v1",
         actorType: "system",
@@ -447,6 +469,102 @@ describe("AuditPage", () => {
     const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
     expect(within(chain).getByText("poly-evidence-fed")).toBeInTheDocument();
     expect(within(chain).getByText("paper_fill_recorded")).toBeInTheDocument();
+  });
+
+  it("matches paper fill events through exact research, shadow, promotion, and proposal lineage", async () => {
+    const researchRuns: PolyAlphaResearchRun[] = [
+      {
+        ...mockPolyAlphaResearchRuns[0],
+        id: "run-a",
+        opportunityId: "poly-opp-shared",
+        evidencePackId: "poly-evidence-a"
+      },
+      {
+        ...mockPolyAlphaResearchRuns[0],
+        id: "run-b",
+        opportunityId: "poly-opp-shared",
+        evidencePackId: "poly-evidence-b"
+      }
+    ];
+    const shadowSignals: PolyAlphaShadowSignal[] = [
+      {
+        ...mockPolyAlphaShadowSignals[0],
+        id: "shadow-a",
+        opportunityId: "poly-opp-shared",
+        runId: "run-a"
+      },
+      {
+        ...mockPolyAlphaShadowSignals[0],
+        id: "shadow-b",
+        opportunityId: "poly-opp-shared",
+        runId: "run-b"
+      }
+    ];
+
+    vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue([
+      {
+        ...mockPolyAlphaEvidencePacks[0],
+        id: "poly-evidence-a",
+        opportunityId: "poly-opp-shared"
+      },
+      {
+        ...mockPolyAlphaEvidencePacks[0],
+        id: "poly-evidence-b",
+        opportunityId: "poly-opp-shared"
+      }
+    ]);
+    vi.mocked(fetchPolyAlphaResearchRuns).mockResolvedValue(researchRuns);
+    vi.mocked(fetchPolyAlphaShadowSignals).mockResolvedValue(shadowSignals);
+    vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue([
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "promotion-a",
+        opportunityId: "poly-opp-shared",
+        shadowSignalId: "shadow-a",
+        proposalId: "proposal-a"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "promotion-b",
+        opportunityId: "poly-opp-shared",
+        shadowSignalId: "shadow-b",
+        proposalId: "proposal-b"
+      }
+    ]);
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
+      {
+        source: "api",
+        id: "fill-b",
+        action: "paper_fill_recorded",
+        entityType: "proposal",
+        entityId: "proposal-b",
+        opportunityId: "poly-opp-shared",
+        strategyVersionId: "strategy-v1",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: { status: "approved" },
+        after: { status: "filled" },
+        result: "accepted",
+        reason: "paper fill recorded",
+        requestId: "req-b",
+        createdAt: "2026-05-06T10:18:00.000Z"
+      }
+    ]);
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+
+    const rows = within(screen.getByRole("table", { name: "Poly Alpha evidence chain" })).getAllByRole("row");
+    const firstPackRow = rows.find((row) => within(row).queryByText("poly-evidence-a"));
+    const secondPackRow = rows.find((row) => within(row).queryByText("poly-evidence-b"));
+    expect(firstPackRow).toBeDefined();
+    expect(secondPackRow).toBeDefined();
+    expect(within(firstPackRow as HTMLElement).queryByText("paper_fill_recorded")).not.toBeInTheDocument();
+    expect(within(firstPackRow as HTMLElement).getByText("promotion-a")).toBeInTheDocument();
+    expect(within(secondPackRow as HTMLElement).getByText("paper_fill_recorded")).toBeInTheDocument();
+    expect(within(secondPackRow as HTMLElement).getByText("promotion-b")).toBeInTheDocument();
   });
 
   it("matches exploration decisions to their exact evidence pack before falling back to opportunity", async () => {

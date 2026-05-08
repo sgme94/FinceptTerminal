@@ -78,17 +78,20 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
         status_code=status.HTTP_202_ACCEPTED,
     )
     def start_poly_alpha_manual_research(request: PolyAlphaManualResearchRequest) -> PolyAlphaControlResponse:
-        run_id = repo.start_manual_research_run(
-            opportunity_id=request.opportunity_id,
-            evidence_pack_id=request.evidence_pack_id,
-            strategy_version_id=request.strategy_version_id,
-            event_id=request.event_id,
-            venue=request.venue,
-            venue_market_id=request.venue_market_id,
-            requested_by=request.requested_by,
-            config=request.config,
-            now=utc_now(),
-        )
+        try:
+            run_id = repo.start_manual_research_run(
+                opportunity_id=request.opportunity_id,
+                evidence_pack_id=request.evidence_pack_id,
+                strategy_version_id=request.strategy_version_id,
+                event_id=request.event_id,
+                venue=request.venue,
+                venue_market_id=request.venue_market_id,
+                requested_by=request.requested_by,
+                config=request.config,
+                now=utc_now(),
+            )
+        except ValueError as exc:
+            raise poly_alpha_bad_request(exc) from exc
         return poly_alpha_response("research_started", {"run_id": run_id})
 
     @app.post(

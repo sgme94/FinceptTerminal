@@ -685,6 +685,20 @@ def test_paper_proposal_bridge_requires_promotion_and_records_paper_queue_lineag
     assert "proposal_created" in [row["action"] for row in list_audit_events(conn, "dep-1")]
 
 
+def test_paper_proposal_bridge_is_idempotent_for_existing_promotion():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+
+    first_proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    second_proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+
+    proposals = list_trade_proposals(conn, "dep-1")
+    assert second_proposal_id == first_proposal_id
+    assert [proposal["proposal_id"] for proposal in proposals] == [first_proposal_id]
+    assert list_promotion_decisions(conn)[0]["proposal_id"] == first_proposal_id
+
+
 def test_paper_proposal_bridge_rolls_back_when_opportunity_lineage_update_fails():
     conn = _conn()
     _seed_validated_shadow(conn)

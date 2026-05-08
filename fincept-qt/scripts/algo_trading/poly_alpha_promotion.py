@@ -160,6 +160,10 @@ def create_paper_proposal_from_promotion(
             [row for row in list_promotion_decisions(conn) if row["promotion_id"] == promotion_id],
             "Promotion decision must exist and be promote",
         )
+        if promotion["proposal_id"]:
+            _proposal_bridge(conn, promotion["proposal_id"])
+            conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+            return promotion["proposal_id"]
         if promotion["decision"] != "promote":
             raise ValueError("Promotion decision must be promote before creating a proposal")
         opportunity = _one(

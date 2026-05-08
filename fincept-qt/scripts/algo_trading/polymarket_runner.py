@@ -32,6 +32,12 @@ from polymarket_store import (
     upsert_position,
 )
 
+try:
+    from poly_alpha_promotion import record_paper_fill_recorded, record_post_approval_skip
+except ImportError:  # pragma: no cover - keeps standalone runner imports tolerant.
+    record_paper_fill_recorded = None
+    record_post_approval_skip = None
+
 
 def run_polymarket_cycle(
     *,
@@ -275,7 +281,17 @@ def _process_approved_proposals(conn, deployment_id, positions, books, source, c
     ]
     for proposal in approved:
         if _is_poly_alpha_paper_proposal(proposal):
-            # Poly Alpha proposals are finalized through poly_alpha_promotion bridge to preserve lineage.
+            _process_poly_alpha_approved_proposal(
+                conn,
+                deployment_id,
+                proposal,
+                positions,
+                books,
+                source,
+                cfg,
+                now,
+                result,
+            )
             continue
         if _is_expired(proposal.get("expires_at"), now):
             _transition_proposal(
@@ -384,6 +400,100 @@ def _process_approved_proposals(conn, deployment_id, positions, books, source, c
         ):
             raise RuntimeError("proposal_transition_conflict")
         result["fills"] += 1
+
+
+def _process_poly_alpha_approved_proposal(
+    conn,
+    deployment_id,
+    proposal,
+    positions,
+    books,
+    source,
+    cfg,
+    now,
+    result,
+) -> None:
+    if record_paper_fill_recorded is None or record_post_approval_skip is None:
+        raise RuntimeError("poly_alpha_promotion bridge is unavailable")
+
+    opportunity_id = (proposal.get("features") or {}).get("opportunity_id") or ""
+    if not opportunity_id:
+        _transition_proposal(
+            conn,
+            deployment_id,
+            proposal,
+            "failed",
+            now,
+            action="error",
+            result="failed",
+            reason="missing_poly_alpha_opportunity",
+        )
+        return
+    if _is_expired(proposal.get("expires_at"), now):
+        if record_post_approval_skip(conn, opportunity_id, proposal["proposal_id"], "proposal_expired", now):
+            result["skips"] += 1
+        return
+
+    asset_id = proposal.get("asset_id") or ""
+    book_payload = books.get(asset_id)
+    if not book_payload and source is not None:
+        book_payload = source.fetch_clob_order_book(asset_id)
+        books[asset_id] = book_payload
+    if not book_payload:
+        if record_post_approval_skip(conn, opportunity_id, proposal["proposal_id"], "missing_orderbook", now):
+            result["skips"] += 1
+        return
+    if _is_stale(book_payload, now, int(cfg.get("freshness_ttl_sec", 30))):
+        if record_post_approval_skip(conn, opportunity_id, proposal["proposal_id"], "stale_orderbook", now):
+            result["skips"] += 1
+        return
+
+    book = _book_from_payload(book_payload)
+    signal = SignalDecision(
+        asset_id=asset_id,
+        action=proposal.get("side") or "buy",
+        entry_price=book.best_ask,
+        estimated_probability=proposal.get("estimated_probability"),
+        edge=float(proposal.get("edge") or 0.0),
+        confidence=float(proposal.get("confidence") or 0.0),
+        reason=proposal.get("reason") or "manual approval",
+        features=proposal.get("features") or {},
+    )
+    signal.size = float(proposal.get("size") or 0.0)
+    risk = check_entry_risk(
+        signal=signal,
+        portfolio=_portfolio_from_positions(positions),
+        config=_risk_config(cfg),
+        now=now,
+    )
+    if not risk.ok:
+        if record_post_approval_skip(conn, opportunity_id, proposal["proposal_id"], risk.reason, now):
+            result["skips"] += 1
+        return
+
+    fill = simulate_entry_fill(signal, book)
+    if not fill.ok:
+        if record_post_approval_skip(conn, opportunity_id, proposal["proposal_id"], fill.reason, now):
+            result["skips"] += 1
+        return
+    if not _claim_proposal(conn, deployment_id, proposal):
+        return
+
+    conn.execute("SAVEPOINT poly_alpha_runner_fill")
+    try:
+        position = apply_fill_to_position(positions.get(asset_id), fill)
+        if position is not None:
+            positions[asset_id] = position
+            upsert_position(conn, deployment_id, position, now)
+        trade_id = record_trade(conn, deployment_id, fill, now)
+        if not record_paper_fill_recorded(conn, opportunity_id, proposal["proposal_id"], str(trade_id), now):
+            raise RuntimeError("poly_alpha_paper_fill_conflict")
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT poly_alpha_runner_fill")
+        conn.execute("RELEASE SAVEPOINT poly_alpha_runner_fill")
+        raise
+    conn.execute("RELEASE SAVEPOINT poly_alpha_runner_fill")
+    result["fills"] += 1
 
 
 def _expire_proposed_proposals(conn, deployment_id, now) -> None:

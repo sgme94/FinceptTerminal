@@ -120,6 +120,47 @@ def is_poly_alpha_paper_proposal(proposal: dict[str, Any]) -> bool:
     return features.get("source") == "poly_alpha" and features.get("paper_only") is True
 
 
+def require_poly_alpha_manual_research_lineage(
+    conn: sqlite3.Connection,
+    *,
+    opportunity_id: str,
+    evidence_pack_id: str,
+    strategy_version_id: str,
+    event_id: str,
+    venue: str,
+    venue_market_id: str,
+) -> None:
+    strategies = {row["strategy_version_id"] for row in list_strategy_versions(conn)}
+    if strategy_version_id not in strategies:
+        raise ValueError(f"Unknown strategy_version_id: {strategy_version_id}")
+
+    opportunity = next(
+        (row for row in list_opportunities(conn) if row["opportunity_id"] == opportunity_id),
+        None,
+    )
+    if opportunity is None:
+        raise ValueError(f"Unknown opportunity_id: {opportunity_id}")
+    if opportunity["strategy_version_id"] != strategy_version_id:
+        raise ValueError("Manual research opportunity strategy_version_id mismatch")
+    if venue and opportunity["venue"] != venue:
+        raise ValueError("Manual research opportunity venue mismatch")
+    if venue_market_id and opportunity["venue_market_id"] != venue_market_id:
+        raise ValueError("Manual research opportunity venue_market_id mismatch")
+
+    evidence_pack = next(
+        (row for row in list_evidence_packs(conn) if row["evidence_pack_id"] == evidence_pack_id),
+        None,
+    )
+    if evidence_pack is None:
+        raise ValueError(f"Unknown evidence_pack_id: {evidence_pack_id}")
+    if evidence_pack["opportunity_id"] != opportunity_id:
+        raise ValueError("Manual research evidence pack opportunity_id mismatch")
+    if evidence_pack["strategy_version_id"] != strategy_version_id:
+        raise ValueError("Manual research evidence pack strategy_version_id mismatch")
+    if event_id and event_id not in evidence_pack["event_ids"]:
+        raise ValueError("Manual research event_id is not in evidence pack")
+
+
 def _parse_utc(value: str) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -163,6 +204,15 @@ class PolymarketRepository:
         now: str,
     ) -> str:
         with self.connect() as conn:
+            require_poly_alpha_manual_research_lineage(
+                conn,
+                opportunity_id=opportunity_id,
+                evidence_pack_id=evidence_pack_id,
+                strategy_version_id=strategy_version_id,
+                event_id=event_id,
+                venue=venue,
+                venue_market_id=venue_market_id,
+            )
             return record_research_run(
                 conn,
                 trigger_type="manual_task",

@@ -13,6 +13,7 @@ for path in (SCRIPT_ROOT, ALGO_ROOT):
 
 from polymarket_web_api.app import create_app
 from polymarket_web_api.repository import InvalidProposalStateError, PolymarketRepository
+from polymarket_runner import run_polymarket_cycle
 from poly_alpha_promotion import create_paper_proposal_from_promotion, evaluate_promotion
 from poly_alpha_store import (
     ensure_poly_alpha_schema,
@@ -22,6 +23,7 @@ from poly_alpha_store import (
     record_document,
     record_event,
     record_event_market_link,
+    record_evidence_pack,
     record_market_snapshot,
     record_opportunity,
     record_research_run,
@@ -235,6 +237,26 @@ def seed_poly_alpha_evidence(conn, suffix="control", market_id="market-1"):
         created_at=POLY_NOW,
     )
     return opportunity_id, document_id, snapshot_id, event_id
+
+
+def seed_poly_alpha_evidence_pack(conn, suffix="control", market_id="market-1"):
+    opportunity_id, document_id, snapshot_id, event_id = seed_poly_alpha_evidence(conn, suffix=suffix, market_id=market_id)
+    evidence_pack_id = record_evidence_pack(
+        conn,
+        evidence_pack_id=f"pack-{suffix}",
+        opportunity_id=opportunity_id,
+        strategy_version_id="strat-v1",
+        document_ids=[document_id],
+        snapshot_ids=[snapshot_id],
+        event_ids=[event_id],
+        source_set_version="sources-v1",
+        latest_published_at=POLY_NOW,
+        latest_fetched_at=POLY_NOW,
+        latest_observed_at=POLY_NOW,
+        created_at=POLY_NOW,
+        payload_hash=f"pack-hash-{suffix}",
+    )
+    return opportunity_id, evidence_pack_id, event_id
 
 
 def seed_poly_alpha_shadow(conn, suffix="control", with_validation=False):
@@ -686,15 +708,25 @@ def test_poly_alpha_list_route_ignores_resource_query_parameter(tmp_path):
 
 def test_poly_alpha_manual_research_route_records_run_and_audit(tmp_path):
     db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_poly_alpha_schema(conn)
+    seed_poly_alpha_versions(conn)
+    opportunity_id, evidence_pack_id, event_id = seed_poly_alpha_evidence_pack(
+        conn,
+        suffix="manual",
+        market_id="market-manual",
+    )
+    conn.commit()
+    conn.close()
     client = TestClient(create_app(db_path=str(db_path)))
 
     response = client.post(
         "/api/poly-alpha/research-runs/manual",
         json={
-            "opportunity_id": "opp-manual",
-            "evidence_pack_id": "pack-manual",
+            "opportunity_id": opportunity_id,
+            "evidence_pack_id": evidence_pack_id,
             "strategy_version_id": "strat-v1",
-            "event_id": "event-manual",
+            "event_id": event_id,
             "venue": "polymarket",
             "venue_market_id": "market-manual",
             "requested_by": "analyst",
@@ -714,6 +746,49 @@ def test_poly_alpha_manual_research_route_records_run_and_audit(tmp_path):
     assert runs[0]["trigger_type"] == "manual_task"
     assert runs[0]["status"] == "running"
     assert [event["action"] for event in audit] == ["research_started"]
+
+
+def test_poly_alpha_manual_research_route_rejects_unbound_lineage(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_poly_alpha_schema(conn)
+    seed_poly_alpha_versions(conn)
+    opportunity_id, evidence_pack_id, event_id = seed_poly_alpha_evidence_pack(
+        conn,
+        suffix="manual",
+        market_id="market-manual",
+    )
+    conn.commit()
+    conn.close()
+    client = TestClient(create_app(db_path=str(db_path)), raise_server_exceptions=False)
+
+    missing_opportunity = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": "opp-missing",
+            "evidence_pack_id": evidence_pack_id,
+            "strategy_version_id": "strat-v1",
+            "event_id": event_id,
+            "venue": "polymarket",
+            "venue_market_id": "market-manual",
+        },
+    )
+    mismatched_pack = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": opportunity_id,
+            "evidence_pack_id": evidence_pack_id,
+            "strategy_version_id": "strat-v1",
+            "event_id": event_id,
+            "venue": "polymarket",
+            "venue_market_id": "other-market",
+        },
+    )
+
+    assert missing_opportunity.status_code == 400
+    assert mismatched_pack.status_code == 400
+    assert client.get("/api/poly-alpha/research-runs").json()["items"] == []
+    assert client.get("/api/poly-alpha/audit").json()["items"] == []
 
 
 def test_poly_alpha_control_routes_run_paper_only_workflow(tmp_path):
@@ -802,6 +877,149 @@ def test_poly_alpha_control_routes_run_paper_only_workflow(tmp_path):
     proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
     assert proposal["proposal_id"] == proposal_response.json()["ids"]["proposal_id"]
     assert proposal["features"]["paper_only"] is True
+
+
+def test_poly_alpha_manual_research_to_runner_paper_fill_keeps_lineage(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    ensure_poly_alpha_schema(conn)
+    seed_poly_alpha_versions(conn)
+    opportunity_id, evidence_pack_id, event_id = seed_poly_alpha_evidence_pack(
+        conn,
+        suffix="manual-fill",
+        market_id="market-manual-fill",
+    )
+    conn.execute("CREATE TABLE algo_strategies (id TEXT PRIMARY KEY, bot_config TEXT)")
+    conn.execute(
+        "INSERT INTO algo_strategies (id, bot_config) VALUES (?, ?)",
+        ("strat-v1", '{"approval_mode":"manual_approval","paper_order_size":25,"min_edge":0.01}'),
+    )
+    conn.commit()
+    conn.close()
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    research_response = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": opportunity_id,
+            "evidence_pack_id": evidence_pack_id,
+            "strategy_version_id": "strat-v1",
+            "event_id": event_id,
+            "venue": "polymarket",
+            "venue_market_id": "market-manual-fill",
+            "requested_by": "analyst",
+            "config": {"model": "paper-research"},
+        },
+    )
+    run_id = research_response.json()["ids"]["run_id"]
+    conn = sqlite3.connect(db_path)
+    shadow_signal_id = record_shadow_signal(
+        conn,
+        shadow_signal_id="shadow-manual-fill",
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id="market-manual-fill",
+        venue_contract_id="contract-market-manual-fill",
+        outcome_id="yes",
+        adapter_metadata={"asset_id": "asset-1"},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="shadow",
+        created_at=POLY_NOW,
+        expires_at="2099-05-07T00:00:00Z",
+    )
+    record_validation_result(
+        conn,
+        opportunity_id=opportunity_id,
+        shadow_signal_id=shadow_signal_id,
+        strategy_version_id="strat-v1",
+        entry_snapshot_id="snap-entry",
+        exit_snapshot_id="snap-exit",
+        validation_type="fixed_horizon",
+        entry_price=0.42,
+        exit_price=0.48,
+        holding_period="1h",
+        gross_return=0.14,
+        cost_adjusted_return=0.12,
+        closing_line_value=0.05,
+        brier_score=0.21,
+        calibration_error=0.02,
+        edge_decay=0.01,
+        information_lag_sec=30,
+        fetch_lag_sec=5,
+        market_move_before_signal=0.01,
+        market_move_after_signal=0.06,
+        max_adverse_excursion=-0.02,
+        max_favorable_excursion=0.08,
+        liquidity_assumption="top_of_book",
+        slippage_assumption="one_tick",
+        pass_fail="pass",
+        failure_reason="",
+        created_at=POLY_NOW,
+    )
+    conn.commit()
+    conn.close()
+    promotion_response = client.post(
+        "/api/poly-alpha/promotions/evaluate",
+        json={"shadow_signal_id": shadow_signal_id, "config": passing_promotion_config()},
+    )
+    proposal_response = client.post(
+        "/api/poly-alpha/paper-proposals/create",
+        json={
+            "promotion_id": promotion_response.json()["ids"]["promotion_id"],
+            "deployment_id": "dep-1",
+        },
+    )
+    proposal_id = proposal_response.json()["ids"]["proposal_id"]
+    approve_response = client.post(
+        f"/api/proposals/{proposal_id}/approve",
+        json={
+            "deployment_id": "dep-1",
+            "strategy_id": "strat-v1",
+            "actor_id": "reviewer",
+            "reason": "manual approve",
+        },
+    )
+    run_result = run_polymarket_cycle(
+        db_path=str(db_path),
+        deployment_id="dep-1",
+        strategy_id="strat-v1",
+        market_payload={"fetched_at": "2026-05-07T00:00:20Z", "data": []},
+        order_books={
+            "asset-1": {
+                "source_api": "fixture",
+                "fetched_at": "2026-05-07T00:00:20Z",
+                "data": {
+                    "asset_id": "asset-1",
+                    "bids": [{"price": "0.41", "size": "100"}],
+                    "asks": [{"price": "0.42", "size": "100"}],
+                },
+            }
+        },
+        now="2026-05-07T00:00:20Z",
+    )
+
+    assert research_response.status_code == 202
+    assert promotion_response.status_code == 202
+    assert proposal_response.status_code == 202
+    assert approve_response.status_code == 202
+    assert run_result["fills"] == 1
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    audit_actions = [event["action"] for event in client.get("/api/poly-alpha/audit").json()["items"]]
+    assert proposal["status"] == "filled"
+    assert proposal["fill_trade_id"]
+    assert "research_started" in audit_actions
+    assert "promotion_approved" in audit_actions
+    assert "proposal_created" in audit_actions
+    assert "proposal_approved" in audit_actions
+    assert "paper_fill_recorded" in audit_actions
 
 
 def test_poly_alpha_control_routes_reject_live_order_fields(tmp_path):
