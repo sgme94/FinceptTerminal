@@ -1015,6 +1015,8 @@ def update_opportunity_status(
     lifecycle_event: str | None = None,
     expected_status: str | None = None,
     write_audit: bool = False,
+    audit_entity_type: str | None = None,
+    audit_entity_id: str | None = None,
 ) -> bool:
     row = conn.execute(
         """
@@ -1065,8 +1067,8 @@ def update_opportunity_status(
         _record_audit_event(
             conn,
             action=audit_action,
-            entity_type="opportunity",
-            entity_id=opportunity_id,
+            entity_type=audit_entity_type or "opportunity",
+            entity_id=audit_entity_id or opportunity_id,
             strategy_version_id=row[2],
             opportunity_id=opportunity_id,
             before={"status": row[0], "primary_reason": row[1]},

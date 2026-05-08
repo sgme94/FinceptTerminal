@@ -243,12 +243,12 @@ class PolyAlphaControlResponse(BaseModel):
 
 
 class PolyAlphaManualResearchRequest(StrictPolyAlphaControlRequest):
-    opportunity_id: str
-    evidence_pack_id: str = ""
-    strategy_version_id: str
-    event_id: str = ""
+    opportunity_id: str = Field(min_length=1)
+    evidence_pack_id: str = Field(min_length=1)
+    strategy_version_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
     venue: str = "polymarket"
-    venue_market_id: str = ""
+    venue_market_id: str = Field(min_length=1)
     requested_by: str = "local-user"
     config: dict[str, Any] = Field(default_factory=dict)
 

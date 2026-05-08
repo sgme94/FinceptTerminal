@@ -130,6 +130,12 @@ def require_poly_alpha_manual_research_lineage(
     venue: str,
     venue_market_id: str,
 ) -> None:
+    if not event_id:
+        raise ValueError("Manual research requires event_id")
+    if not venue:
+        raise ValueError("Manual research requires venue")
+    if not venue_market_id:
+        raise ValueError("Manual research requires venue_market_id")
     strategies = {row["strategy_version_id"] for row in list_strategy_versions(conn)}
     if strategy_version_id not in strategies:
         raise ValueError(f"Unknown strategy_version_id: {strategy_version_id}")
@@ -142,9 +148,9 @@ def require_poly_alpha_manual_research_lineage(
         raise ValueError(f"Unknown opportunity_id: {opportunity_id}")
     if opportunity["strategy_version_id"] != strategy_version_id:
         raise ValueError("Manual research opportunity strategy_version_id mismatch")
-    if venue and opportunity["venue"] != venue:
+    if opportunity["venue"] != venue:
         raise ValueError("Manual research opportunity venue mismatch")
-    if venue_market_id and opportunity["venue_market_id"] != venue_market_id:
+    if opportunity["venue_market_id"] != venue_market_id:
         raise ValueError("Manual research opportunity venue_market_id mismatch")
 
     evidence_pack = next(
@@ -157,7 +163,7 @@ def require_poly_alpha_manual_research_lineage(
         raise ValueError("Manual research evidence pack opportunity_id mismatch")
     if evidence_pack["strategy_version_id"] != strategy_version_id:
         raise ValueError("Manual research evidence pack strategy_version_id mismatch")
-    if event_id and event_id not in evidence_pack["event_ids"]:
+    if event_id not in evidence_pack["event_ids"]:
         raise ValueError("Manual research event_id is not in evidence pack")
 
 

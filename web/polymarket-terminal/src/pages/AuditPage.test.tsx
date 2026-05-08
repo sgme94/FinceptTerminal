@@ -659,4 +659,39 @@ describe("AuditPage", () => {
     expect(within(secondPackRow!).getByText("api-explore-b")).toBeInTheDocument();
     expect(within(secondPackRow!).getByText("reject")).toBeInTheDocument();
   });
+
+  it("does not join exploration audit events by loose message text", async () => {
+    vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue([
+      {
+        ...mockPolyAlphaEvidencePacks[0],
+        id: "poly-evidence-message",
+        opportunityId: "poly-opp-message"
+      }
+    ]);
+    vi.mocked(fetchPolyAlphaExplorationDecisions).mockResolvedValue([]);
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([]);
+    vi.mocked(getAuditEvents).mockResolvedValue([
+      {
+        source: "api",
+        id: "audit-message-only",
+        deploymentId: "dep-test",
+        level: "info",
+        message: "exploration mentions poly-opp-message but belongs elsewhere",
+        actor: "agent",
+        action: "exploration_false_positive",
+        entityType: "exploration_decision",
+        entityId: "unrelated-exploration",
+        result: "accepted",
+        createdAt: "2026-05-06T10:16:00.000Z"
+      }
+    ]);
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    const rows = within(screen.getByRole("table", { name: "Poly Alpha evidence chain" })).getAllByRole("row");
+    const chainRow = rows.find((row) => within(row).queryByText("poly-evidence-message"));
+    expect(chainRow).toBeDefined();
+    expect(within(chainRow!).queryByText("exploration_false_positive")).not.toBeInTheDocument();
+  });
 });

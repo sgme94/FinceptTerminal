@@ -355,6 +355,8 @@ def record_post_approval_skip(
             updated_at=now,
             expected_status="approved",
             write_audit=True,
+            audit_entity_type="proposal",
+            audit_entity_id=proposal_id,
         )
         if not updated:
             raise ValueError("paper_fill_skipped opportunity lineage update failed")
@@ -409,6 +411,8 @@ def record_paper_fill_recorded(
             updated_at=now,
             expected_status="approved",
             write_audit=True,
+            audit_entity_type="proposal",
+            audit_entity_id=proposal_id,
         )
         if not updated:
             raise ValueError("paper_fill_recorded opportunity lineage update failed")

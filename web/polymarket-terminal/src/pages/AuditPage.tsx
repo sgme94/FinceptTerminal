@@ -388,8 +388,7 @@ export function AuditPage() {
             )
           : events.find(
               (event) =>
-                event.action?.startsWith("exploration") &&
-                (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
+                event.action?.startsWith("exploration") && event.entityId === pack.opportunityId
             );
         const packRunIds = new Set(
           polyAlphaResearchRuns

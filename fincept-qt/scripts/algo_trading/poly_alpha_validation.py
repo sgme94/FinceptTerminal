@@ -314,6 +314,7 @@ def _record_result(
         pass_fail=pass_fail,
         failure_reason=failure_reason,
         created_at=now,
+        write_audit=True,
     )
 
 

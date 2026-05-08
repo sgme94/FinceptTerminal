@@ -784,9 +784,19 @@ def test_poly_alpha_manual_research_route_rejects_unbound_lineage(tmp_path):
             "venue_market_id": "other-market",
         },
     )
+    missing_required_lineage = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": opportunity_id,
+            "evidence_pack_id": evidence_pack_id,
+            "strategy_version_id": "strat-v1",
+            "venue": "polymarket",
+        },
+    )
 
     assert missing_opportunity.status_code == 400
     assert mismatched_pack.status_code == 400
+    assert missing_required_lineage.status_code == 422
     assert client.get("/api/poly-alpha/research-runs").json()["items"] == []
     assert client.get("/api/poly-alpha/audit").json()["items"] == []
 
@@ -874,6 +884,8 @@ def test_poly_alpha_control_routes_run_paper_only_workflow(tmp_path):
     assert client.get("/api/poly-alpha/exploration-decisions").json()["items"][0]["decision"] == "pass"
     assert client.get("/api/poly-alpha/validations").json()["items"]
     assert client.get("/api/poly-alpha/promotions").json()["items"][0]["decision"] == "promote"
+    audit_actions = [event["action"] for event in client.get("/api/poly-alpha/audit").json()["items"]]
+    assert "validation_completed" in audit_actions
     proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
     assert proposal["proposal_id"] == proposal_response.json()["ids"]["proposal_id"]
     assert proposal["features"]["paper_only"] is True

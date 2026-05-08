@@ -736,7 +736,9 @@ def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit
 
     assert record_paper_fill_recorded(conn, "opp-promo", proposal_id, "trade-1", NOW)
     assert list_opportunities(conn)[0]["status"] == "filled"
-    assert "paper_fill_recorded" in [row["action"] for row in list_poly_alpha_audit_events(conn)]
+    fill_audit = next(row for row in list_poly_alpha_audit_events(conn) if row["action"] == "paper_fill_recorded")
+    assert fill_audit["entity_type"] == "proposal"
+    assert fill_audit["entity_id"] == proposal_id
 
     conn = _conn()
     _seed_validated_shadow(conn)
@@ -754,7 +756,9 @@ def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit
     assert record_post_approval_skip(conn, "opp-promo", proposal_id, "approval_latency_risk", NOW)
     assert list_opportunities(conn)[0]["status"] == "skipped"
     assert list_opportunities(conn)[0]["primary_reason"] == "approval_latency_risk"
-    assert "paper_fill_skipped" in [row["action"] for row in list_poly_alpha_audit_events(conn)]
+    skip_audit = next(row for row in list_poly_alpha_audit_events(conn) if row["action"] == "paper_fill_skipped")
+    assert skip_audit["entity_type"] == "proposal"
+    assert skip_audit["entity_id"] == proposal_id
     proposal = list_trade_proposals(conn, "dep-1")[0]
     assert proposal["status"] == "failed"
     assert proposal["decision_reason"] == "approval_latency_risk"
