@@ -22,6 +22,7 @@ from polymarket_store import (  # noqa: E402
     record_audit_event,
     update_trade_proposal_status,
 )
+from poly_alpha_promotion import record_proposal_decision as record_poly_alpha_proposal_decision  # noqa: E402
 
 
 class ProposalNotFoundError(Exception):
@@ -58,6 +59,11 @@ def utc_now() -> str:
 
 def find_proposal(conn: sqlite3.Connection, deployment_id: str, proposal_id: str) -> dict[str, Any] | None:
     return next((item for item in list_trade_proposals(conn, deployment_id) if item["proposal_id"] == proposal_id), None)
+
+
+def is_poly_alpha_paper_proposal(proposal: dict[str, Any]) -> bool:
+    features = proposal.get("features") or {}
+    return features.get("source") == "poly_alpha" and features.get("paper_only") is True
 
 
 def _parse_utc(value: str) -> datetime | None:
@@ -318,6 +324,37 @@ class PolymarketRepository:
                 )
                 conn.commit()
                 raise ProposalExpiredError(proposal_id)
+            if is_poly_alpha_paper_proposal(before):
+                updated = record_poly_alpha_proposal_decision(
+                    conn,
+                    proposal_id,
+                    status,
+                    actor_id,
+                    now,
+                    reason,
+                )
+                if not updated:
+                    current = find_proposal(conn, deployment_id, proposal_id) or dict(before)
+                    record_audit_event(
+                        conn,
+                        deployment_id=deployment_id,
+                        strategy_id=strategy_id,
+                        actor_type="user",
+                        actor_id=actor_id,
+                        action=action,
+                        entity_type="proposal",
+                        entity_id=proposal_id,
+                        before=before,
+                        after=current,
+                        result="failed",
+                        reason="proposal_not_proposed",
+                        request_id=request_id,
+                        now=now,
+                    )
+                    conn.commit()
+                    raise InvalidProposalStateError(proposal_id)
+                events = list_audit_events(conn, deployment_id)
+                return events[-1]["event_id"] if events else ""
             updated = update_trade_proposal_status(
                 conn,
                 proposal_id,

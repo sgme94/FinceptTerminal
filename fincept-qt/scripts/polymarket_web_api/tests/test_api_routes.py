@@ -13,7 +13,19 @@ for path in (SCRIPT_ROOT, ALGO_ROOT):
 
 from polymarket_web_api.app import create_app
 from polymarket_web_api.repository import InvalidProposalStateError, PolymarketRepository
+from poly_alpha_promotion import create_paper_proposal_from_promotion, evaluate_promotion
+from poly_alpha_store import (
+    ensure_poly_alpha_schema,
+    list_opportunities,
+    list_poly_alpha_audit_events,
+    record_opportunity,
+    record_research_run,
+    record_shadow_signal,
+    record_validation_result,
+)
 from polymarket_store import ensure_polymarket_schema, record_audit_event
+
+POLY_NOW = "2026-05-07T00:00:00Z"
 
 
 def insert_proposal(
@@ -51,6 +63,122 @@ def insert_proposal(
             expires_at,
         ),
     )
+
+
+def passing_promotion_config():
+    return {
+        "min_promotion_samples": 30,
+        "min_promotion_history_days": 90,
+        "sample_count": 30,
+        "history_days": 90,
+        "cost_adjusted_net_return": 0.08,
+        "median_clv_after_costs": 0.03,
+        "max_drawdown": -0.12,
+        "max_drawdown_threshold": -0.20,
+        "hit_rate": 0.56,
+        "min_hit_rate": 0.52,
+        "payoff_ratio": 1.25,
+        "min_payoff_ratio": 1.10,
+        "capacity": 50.0,
+        "paper_order_size": 25.0,
+        "lookahead_check_passed": True,
+        "survivorship_check_passed": True,
+        "risk_reviewer_approved": True,
+        "risk_reviewer": "risk-reviewer",
+        "approval_latency_impact": {"median_seconds": 12, "edge_decay": 0.002},
+        "unresolved_metrics": {"edge_decay": 0.01},
+    }
+
+
+def seed_poly_alpha_proposal(conn, proposal_suffix: str) -> str:
+    ensure_poly_alpha_schema(conn)
+    opportunity_id = record_opportunity(
+        conn,
+        opportunity_id=f"opp-{proposal_suffix}",
+        strategy_version_id="strat-1",
+        venue="polymarket",
+        venue_market_id="market-1",
+        venue_contract_id="condition-1",
+        outcome_id="yes",
+        title="Promotion candidate",
+        alpha_family="cross_market_probability",
+        status="watch",
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        created_at=POLY_NOW,
+        updated_at=POLY_NOW,
+    )
+    run_id = record_research_run(
+        conn,
+        run_id=f"run-{proposal_suffix}",
+        trigger_type="manual_task",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="pack-1",
+        strategy_version_id="strat-1",
+        event_id="event-1",
+        venue="polymarket",
+        venue_market_id="market-1",
+        requested_by="user",
+        started_at=POLY_NOW,
+        status="running",
+        model_config={},
+        created_at=POLY_NOW,
+    )
+    shadow_signal_id = record_shadow_signal(
+        conn,
+        shadow_signal_id=f"shadow-{proposal_suffix}",
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id="market-1",
+        venue_contract_id="condition-1",
+        outcome_id="yes",
+        adapter_metadata={"asset_id": "asset-1"},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="shadow",
+        created_at=POLY_NOW,
+        expires_at="2099-05-07T00:00:00Z",
+    )
+    record_validation_result(
+        conn,
+        opportunity_id=opportunity_id,
+        shadow_signal_id=shadow_signal_id,
+        strategy_version_id="strat-1",
+        entry_snapshot_id="snap-entry",
+        exit_snapshot_id="snap-exit",
+        validation_type="fixed_horizon",
+        entry_price=0.42,
+        exit_price=0.48,
+        holding_period="1h",
+        gross_return=0.14,
+        cost_adjusted_return=0.12,
+        closing_line_value=0.05,
+        brier_score=0.21,
+        calibration_error=0.02,
+        edge_decay=None,
+        information_lag_sec=30,
+        fetch_lag_sec=5,
+        market_move_before_signal=0.01,
+        market_move_after_signal=0.06,
+        max_adverse_excursion=-0.02,
+        max_favorable_excursion=0.08,
+        liquidity_assumption="top_of_book",
+        slippage_assumption="one_tick",
+        pass_fail="pass",
+        failure_reason="",
+        created_at=POLY_NOW,
+    )
+    promotion_id = evaluate_promotion(conn, shadow_signal_id, passing_promotion_config(), POLY_NOW)
+    return create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", POLY_NOW)
 
 
 def insert_trade(conn, deployment_id="dep-1"):
@@ -394,6 +522,54 @@ def test_approve_and_reject_update_proposal_state_and_audit(tmp_path):
 
     actions = [event["action"] for event in client.get("/api/audit?deployment_id=dep-1").json()["events"]]
     assert actions == ["approve", "reject"]
+
+
+@pytest.mark.parametrize(
+    ("route_action", "expected_status", "expected_opportunity_status", "expected_audit_action"),
+    [
+        ("approve", "approved", "approved", "proposal_approved"),
+        ("reject", "rejected", "rejected", "proposal_rejected"),
+    ],
+)
+def test_poly_alpha_proposal_decision_route_updates_lineage_and_poly_audit(
+    tmp_path,
+    route_action,
+    expected_status,
+    expected_opportunity_status,
+    expected_audit_action,
+):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    proposal_id = seed_poly_alpha_proposal(conn, proposal_suffix=route_action)
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    response = client.post(
+        f"/api/proposals/{proposal_id}/{route_action}",
+        json={
+            "deployment_id": "dep-1",
+            "strategy_id": "strat-1",
+            "actor_id": "reviewer",
+            "reason": f"manual {route_action}",
+            "request_id": f"req-poly-{route_action}",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["action"] == route_action
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    assert proposal["status"] == expected_status
+    assert proposal["decided_by"] == "reviewer"
+    assert proposal["decision_reason"] == f"manual {route_action}"
+
+    conn = sqlite3.connect(db_path)
+    opportunity = list_opportunities(conn)[0]
+    poly_actions = [row["action"] for row in list_poly_alpha_audit_events(conn)]
+    conn.close()
+    assert opportunity["status"] == expected_opportunity_status
+    assert expected_audit_action in poly_actions
 
 
 def test_repository_approve_does_not_overwrite_state_changed_after_read(tmp_path, monkeypatch):

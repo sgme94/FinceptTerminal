@@ -54,6 +54,9 @@ _LIVE_TRADING_KEY_TOKENS = (
 
 _MIN_PROMOTION_SAMPLES_FLOOR = 30
 _MIN_PROMOTION_HISTORY_DAYS_FLOOR = 90
+_MAX_DRAWDOWN_THRESHOLD_DEFAULT = -0.20
+_MIN_HIT_RATE_DEFAULT = 0.52
+_MIN_PAYOFF_RATIO_DEFAULT = 1.10
 _PAYOFF_RATIO_HIT_RATE_EXCEPTION = 1.5
 _HIT_RATE_PAYOFF_RATIO_EXCEPTION = 0.60
 
@@ -113,9 +116,9 @@ def evaluate_promotion(
             "min_promotion_history_days",
             _MIN_PROMOTION_HISTORY_DAYS_FLOOR,
         ),
-        "max_drawdown_threshold": _number(config, "max_drawdown_threshold"),
-        "min_hit_rate": _number(config, "min_hit_rate"),
-        "min_payoff_ratio": _number(config, "min_payoff_ratio"),
+        "max_drawdown_threshold": _number(config, "max_drawdown_threshold", _MAX_DRAWDOWN_THRESHOLD_DEFAULT),
+        "min_hit_rate": _number(config, "min_hit_rate", _MIN_HIT_RATE_DEFAULT),
+        "min_payoff_ratio": _number(config, "min_payoff_ratio", _MIN_PAYOFF_RATIO_DEFAULT),
         "min_capacity_multiple": _number(config, "min_capacity_multiple", 2.0),
     }
 
@@ -530,7 +533,7 @@ def _unresolved_critic_blockers(conn: sqlite3.Connection, opportunity_id: str) -
         if finding["opportunity_id"] != opportunity_id or finding["agent_role"] != "critic":
             continue
         for blocker in finding["blockers"]:
-            if not blocker.get("resolved", False):
+            if blocker.get("resolved") is not True:
                 blockers.append(blocker)
     return blockers
 

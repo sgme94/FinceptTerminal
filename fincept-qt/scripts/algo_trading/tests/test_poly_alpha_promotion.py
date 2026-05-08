@@ -208,6 +208,24 @@ def test_promotion_gate_promotes_and_records_required_metrics():
     assert list_shadow_signals(conn)[0]["status"] == "promoted"
 
 
+def test_promotion_gate_uses_default_thresholds_when_config_omits_them():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    config = _passing_config()
+    config.pop("max_drawdown_threshold")
+    config.pop("min_hit_rate")
+    config.pop("min_payoff_ratio")
+
+    evaluate_promotion(conn, "shadow-promo", config, NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "promote"
+    assert decision["reason"] == "gate_passed"
+    assert decision["metrics"]["max_drawdown_threshold"] == -0.20
+    assert decision["metrics"]["min_hit_rate"] == 0.52
+    assert decision["metrics"]["min_payoff_ratio"] == 1.10
+
+
 def test_promotion_gate_enforces_hard_coverage_floor_and_allows_90_days():
     conn = _conn()
     _seed_validated_shadow(conn)
@@ -534,6 +552,37 @@ def test_promotion_gate_rejects_blocking_validation_and_agent_findings():
     assert decision["decision"] == "reject"
     assert decision["reason"] == "late_information"
     assert decision["critic_blockers"] == [{"reason": "data_leak", "resolved": False}]
+
+
+def test_promotion_gate_treats_non_literal_true_critic_blockers_as_unresolved():
+    conn = _conn()
+    opportunity_id, _shadow_signal_id = _seed_validated_shadow(conn)
+    record_agent_finding(
+        conn,
+        run_id="run-promo",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="pack-1",
+        strategy_version_id="strat-v1",
+        agent_role="critic",
+        estimated_probability=0.5,
+        market_probability=0.42,
+        edge=0.08,
+        confidence=0.7,
+        recommendation="block",
+        thesis="unresolved blocker string",
+        evidence_ids=[],
+        counter_evidence_ids=[],
+        resolution_risks=[],
+        blockers=[{"reason": "data_leak", "resolved": "false"}],
+        created_at=NOW,
+    )
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "critic_blocker"
+    assert decision["critic_blockers"] == [{"reason": "data_leak", "resolved": "false"}]
 
 
 def test_promotion_gate_rejects_late_information_from_any_validation_type():
