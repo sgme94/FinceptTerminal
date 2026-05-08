@@ -1,8 +1,8 @@
 # Fincept 登录后页面前端复刻参考包
 
-生成日期：2026-05-06  
-目标页面：https://fincept.in/dashboard  
-工具来源：browser-harness 登录态渲染抓取，Scrapling 认证静态/动态抽取  
+生成日期：2026-05-06
+目标页面：https://fincept.in/dashboard
+工具来源：browser-harness 登录态渲染抓取，Scrapling 认证静态/动态抽取
 隐私处理：截图前和文本落盘后均做了账户字段脱敏；cookie 只作为临时请求头使用，未保存到参考包。
 
 ## 文件结构
@@ -52,4 +52,3 @@ fincept-logged-in-frontend-reference-2026-05-06/
 移动菜单：
 
 ![dashboard mobile menu](screenshots/dashboard-mobile-menu.png)
-

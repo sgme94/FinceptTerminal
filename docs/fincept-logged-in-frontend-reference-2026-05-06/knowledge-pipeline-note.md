@@ -53,4 +53,3 @@ flowchart LR
 - `IMPLEMENTATION_CHECKLIST.md`
 - `data/browser-harness-dashboard-analysis.json`
 - `screenshots/`
-

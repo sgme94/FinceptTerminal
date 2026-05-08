@@ -190,4 +190,3 @@ Join hedge fund analysts, family office PMs, economists, and independent traders
 [/Fincept](/)© 2026 Fincept Corporation
 
 [About](/about)[Careers](/careers)[Blog](/blog)[Contact](/contact)[FAQ](/faq)[Privacy](/privacy)[Terms](/terms)
-

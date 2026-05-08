@@ -128,4 +128,3 @@ Dashboard 由四个核心块组成：
 - icon-only 按钮需要 `aria-label`，不要只依赖 `title`。
 - 搜索框和 Agent textarea 需要显式 label 或 `aria-label`。
 - 右侧信息栏在窄屏不应挤压主工作区，建议折叠为 drawer 或下方 tab。
-
