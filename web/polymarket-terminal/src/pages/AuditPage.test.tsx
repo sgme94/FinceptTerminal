@@ -396,4 +396,59 @@ describe("AuditPage", () => {
     expect(within(chain).getByText("api-explore-fed")).toBeInTheDocument();
     expect(within(chain).queryByText("paper_fill_skipped")).not.toBeInTheDocument();
   });
+
+  it("matches exploration decisions to their exact evidence pack before falling back to opportunity", async () => {
+    vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue([
+      {
+        ...mockPolyAlphaEvidencePacks[0],
+        id: "poly-evidence-a",
+        opportunityId: "poly-opp-shared"
+      },
+      {
+        ...mockPolyAlphaEvidencePacks[0],
+        id: "poly-evidence-b",
+        opportunityId: "poly-opp-shared"
+      }
+    ]);
+    vi.mocked(fetchPolyAlphaExplorationDecisions).mockResolvedValue([
+      {
+        source: "api",
+        id: "api-explore-a",
+        opportunityId: "poly-opp-shared",
+        evidencePackId: "poly-evidence-a",
+        strategyVersionId: "strategy-v1",
+        decision: "pass",
+        reason: "first pack",
+        metrics: {},
+        createdAt: "2026-05-06T10:09:00.000Z"
+      },
+      {
+        source: "api",
+        id: "api-explore-b",
+        opportunityId: "poly-opp-shared",
+        evidencePackId: "poly-evidence-b",
+        strategyVersionId: "strategy-v1",
+        decision: "reject",
+        reason: "second pack",
+        metrics: {},
+        createdAt: "2026-05-06T10:10:00.000Z"
+      }
+    ]);
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
+    const rows = within(chain).getAllByRole("row");
+    const firstPackRow = rows.find((row) => within(row).queryByText("poly-evidence-a"));
+    const secondPackRow = rows.find((row) => within(row).queryByText("poly-evidence-b"));
+
+    expect(firstPackRow).toBeDefined();
+    expect(secondPackRow).toBeDefined();
+    expect(within(firstPackRow!).getByText("api-explore-a")).toBeInTheDocument();
+    expect(within(firstPackRow!).getByText("pass")).toBeInTheDocument();
+    expect(within(secondPackRow!).getByText("api-explore-b")).toBeInTheDocument();
+    expect(within(secondPackRow!).getByText("reject")).toBeInTheDocument();
+  });
 });

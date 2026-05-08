@@ -190,16 +190,93 @@ describe("RiskPage", () => {
     expect(client.approveTradeProposal).not.toHaveBeenCalled();
   });
 
-  it("shows only promoted Poly Alpha proposal candidates and does not show raw shadow signals", async () => {
+  it("shows only proposed promoted Poly Alpha proposal candidates and does not show raw shadow signals", async () => {
+    const client = await import("../api/client");
+    vi.mocked(client.getTradeProposals).mockResolvedValue([
+      {
+        ...mockTradeProposals[0],
+        id: "prop-poly-proposed",
+        marketId: "mkt-risk-proposed",
+        status: "proposed",
+        source: "api",
+        stale: false
+      },
+      {
+        ...mockTradeProposals[0],
+        id: "prop-poly-approved",
+        marketId: "mkt-risk-approved",
+        status: "approved",
+        source: "api",
+        stale: false
+      },
+      {
+        ...mockTradeProposals[0],
+        id: "prop-poly-rejected",
+        marketId: "mkt-risk-rejected",
+        status: "rejected",
+        source: "api",
+        stale: false
+      },
+      {
+        ...mockTradeProposals[0],
+        id: "prop-poly-expired",
+        marketId: "mkt-risk-expired",
+        status: "expired",
+        source: "api",
+        stale: false
+      }
+    ]);
+    vi.mocked(client.fetchPolyAlphaPromotions).mockResolvedValue([
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-proposed",
+        shadowSignalId: "poly-shadow-proposed",
+        decision: "promote",
+        proposalId: "prop-poly-proposed"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-approved",
+        shadowSignalId: "poly-shadow-approved",
+        decision: "promote",
+        proposalId: "prop-poly-approved"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-rejected",
+        shadowSignalId: "poly-shadow-rejected",
+        decision: "promote",
+        proposalId: "prop-poly-rejected"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-expired",
+        shadowSignalId: "poly-shadow-expired",
+        decision: "promote",
+        proposalId: "prop-poly-expired"
+      },
+      {
+        ...mockPolyAlphaPromotionDecisions[0],
+        id: "poly-promotion-missing",
+        shadowSignalId: "poly-shadow-missing",
+        decision: "promote",
+        proposalId: "prop-poly-missing"
+      }
+    ]);
+
     render(<RiskPage />);
 
     expect(await screen.findByRole("heading", { name: "Risk" })).toBeInTheDocument();
 
-    expect(await screen.findByText("prop-poly-promoted")).toBeInTheDocument();
     const polyAlphaQueue = screen.getByRole("table", { name: "Poly Alpha Risk queue" });
-    expect(within(polyAlphaQueue).getByText("prop-poly-promoted")).toBeInTheDocument();
+    expect(within(polyAlphaQueue).getByText("prop-poly-proposed")).toBeInTheDocument();
+    expect(within(polyAlphaQueue).getByText("mkt-risk-proposed")).toBeInTheDocument();
+    expect(within(polyAlphaQueue).getByText("proposed")).toBeInTheDocument();
     expect(within(polyAlphaQueue).getByText("promote")).toBeInTheDocument();
-    expect(within(polyAlphaQueue).queryByText("poly-promotion-watch")).not.toBeInTheDocument();
-    expect(screen.queryByText("poly-shadow-watch")).not.toBeInTheDocument();
+    expect(within(polyAlphaQueue).queryByText("prop-poly-approved")).not.toBeInTheDocument();
+    expect(within(polyAlphaQueue).queryByText("prop-poly-rejected")).not.toBeInTheDocument();
+    expect(within(polyAlphaQueue).queryByText("prop-poly-expired")).not.toBeInTheDocument();
+    expect(within(polyAlphaQueue).queryByText("prop-poly-missing")).not.toBeInTheDocument();
+    expect(screen.queryByText("poly-shadow-missing")).not.toBeInTheDocument();
   });
 });

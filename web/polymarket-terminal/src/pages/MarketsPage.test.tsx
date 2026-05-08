@@ -32,6 +32,8 @@ vi.mock("../api/client", () => ({
 
 describe("MarketsPage", () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
     const client = await import("../api/client");
     vi.mocked(client.getTerminalSnapshot).mockResolvedValue(mockTerminalSnapshot);
     vi.mocked(client.fetchPolyAlphaOpportunities).mockResolvedValue(mockPolyAlphaOpportunities);
@@ -71,6 +73,45 @@ describe("MarketsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("matches Poly Alpha links by market, contract, and outcome", async () => {
+    const client = await import("../api/client");
+    const opportunity = {
+      ...mockPolyAlphaOpportunities[0],
+      id: "poly-opp-shared-yes",
+      venueMarketId: "mkt-shared",
+      venueContractId: "condition-shared",
+      outcomeId: "yes-token"
+    };
+    vi.mocked(client.fetchPolyAlphaOpportunities).mockResolvedValue([opportunity]);
+    vi.mocked(client.fetchPolyAlphaLinks).mockResolvedValue([
+      {
+        ...mockPolyAlphaLinks[0],
+        id: "poly-link-shared-yes",
+        eventId: "poly-event-yes",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "yes-token",
+        linkConfidence: 0.61
+      },
+      {
+        ...mockPolyAlphaLinks[0],
+        id: "poly-link-shared-no",
+        eventId: "poly-event-no",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "no-token",
+        linkConfidence: 0.99
+      }
+    ]);
+
+    render(<MarketsPage />);
+
+    const polyAlphaTable = await screen.findByRole("table", { name: "Poly Alpha market links" });
+    expect(within(polyAlphaTable).getByText("1 linked event")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("61%")).toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("99%")).not.toBeInTheDocument();
+  });
+
   it("updates the selected market detail from the candidate table", async () => {
     const user = userEvent.setup();
 
@@ -98,6 +139,12 @@ describe("MarketsPage", () => {
 
     expect(screen.getByText("Sent to Cockpit: mkt-btc-100k")).toBeInTheDocument();
     expect(screen.getByText("queued for cockpit")).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem("poly-alpha-cockpit-handoffs") ?? "[]")).toEqual([
+      expect.objectContaining({
+        opportunityId: "poly-opp-btc-may",
+        venueMarketId: "mkt-btc-100k"
+      })
+    ]);
     expect(screen.getByTestId("probability-chart")).toHaveAttribute(
       "aria-label",
       "mkt-fed-2026 probability history"

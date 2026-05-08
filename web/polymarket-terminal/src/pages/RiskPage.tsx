@@ -98,6 +98,11 @@ type HistoryRow = {
   createdAt: string;
 };
 
+type PolyAlphaRiskQueueRow = {
+  promotion: PolyAlphaPromotionDecision;
+  proposal: TradeProposal;
+};
+
 export function RiskPage() {
   const [proposals, setProposals] = useState<TradeProposal[]>(mockTradeProposals);
   const [riskLimits, setRiskLimits] = useState<RiskLimit[]>(mockRiskLimits);
@@ -167,8 +172,19 @@ export function RiskPage() {
     [auditEvents, skips]
   );
   const polyAlphaRiskQueue = useMemo(
-    () => promotions.filter((promotion) => promotion.decision === "promote" && promotion.proposalId.trim() !== ""),
-    [promotions]
+    () => {
+      const proposalsById = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+
+      return promotions.flatMap((promotion) => {
+        if (promotion.decision !== "promote" || promotion.proposalId.trim() === "") {
+          return [];
+        }
+
+        const proposal = proposalsById.get(promotion.proposalId);
+        return proposal?.status === "proposed" ? [{ promotion, proposal }] : [];
+      });
+    },
+    [promotions, proposals]
   );
 
   async function handleApprove(proposal: TradeProposal) {
@@ -287,31 +303,41 @@ export function RiskPage() {
     }
   ];
 
-  const polyAlphaRiskColumns: Array<DenseDataTableColumn<PolyAlphaPromotionDecision>> = [
+  const polyAlphaRiskColumns: Array<DenseDataTableColumn<PolyAlphaRiskQueueRow>> = [
     {
       key: "proposal",
       header: "Proposal",
-      render: (row) => row.proposalId
+      render: (row) => row.proposal.id
+    },
+    {
+      key: "market",
+      header: "Market",
+      render: (row) => row.proposal.marketId
+    },
+    {
+      key: "status",
+      header: "Proposal status",
+      render: (row) => <StatusPill label={row.proposal.status} tone={proposalTone(row.proposal.status)} />
     },
     {
       key: "opportunity",
       header: "Opportunity",
-      render: (row) => row.opportunityId
+      render: (row) => row.promotion.opportunityId
     },
     {
       key: "strategy",
       header: "Strategy",
-      render: (row) => row.strategyVersionId
+      render: (row) => row.promotion.strategyVersionId
     },
     {
       key: "decision",
       header: "Decision",
-      render: (row) => <StatusPill label={row.decision} tone="ok" />
+      render: (row) => <StatusPill label={row.promotion.decision} tone="ok" />
     },
     {
       key: "reason",
       header: "Reason",
-      render: (row) => row.reason
+      render: (row) => row.promotion.reason
     }
   ];
 
@@ -368,7 +394,7 @@ export function RiskPage() {
           caption="Poly Alpha Risk queue"
           columns={polyAlphaRiskColumns}
           rows={polyAlphaRiskQueue}
-          getRowKey={(row) => row.id}
+          getRowKey={(row) => row.promotion.id}
           emptyTitle="No Poly Alpha promoted proposals"
           emptyDescription="No promoted Poly Alpha paper proposals are ready for risk review."
         />

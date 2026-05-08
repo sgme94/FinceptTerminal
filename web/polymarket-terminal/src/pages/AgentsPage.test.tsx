@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockPolyAlphaOpportunities,
@@ -15,6 +15,8 @@ vi.mock("../api/client", () => ({
 
 describe("AgentsPage", () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
     const client = await import("../api/client");
     vi.mocked(client.fetchPolyAlphaCockpit).mockResolvedValue({
       opportunities: mockPolyAlphaOpportunities,
@@ -61,5 +63,62 @@ describe("AgentsPage", () => {
 
     const scansTable = screen.getByRole("table", { name: "Scheduled scan runs" });
     expect(within(scansTable).getByText("poly-scan-001")).toBeInTheDocument();
+  });
+
+  it("renders Cockpit handoff rows saved by MarketsPage", async () => {
+    window.localStorage.setItem(
+      "poly-alpha-cockpit-handoffs",
+      JSON.stringify([
+        {
+          opportunityId: "poly-opp-local",
+          venueMarketId: "mkt-local",
+          title: "Local handoff"
+        }
+      ])
+    );
+
+    render(<AgentsPage />);
+
+    expect(await screen.findByRole("heading", { name: "Cockpit handoff queue" })).toBeInTheDocument();
+    const handoffTable = screen.getByRole("table", { name: "Cockpit handoff queue" });
+    expect(within(handoffTable).getByText("mkt-local")).toBeInTheDocument();
+    expect(within(handoffTable).getByText("poly-opp-local")).toBeInTheDocument();
+  });
+
+  it("updates the Cockpit handoff queue from the MarketsPage handoff event", async () => {
+    render(<AgentsPage />);
+
+    expect(await screen.findByRole("heading", { name: "Poly Alpha Cockpit" })).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("poly-alpha-cockpit-handoff", {
+          detail: {
+            opportunityId: "poly-opp-event",
+            venueMarketId: "mkt-event",
+            title: "Event handoff"
+          }
+        })
+      );
+    });
+
+    const handoffTable = await screen.findByRole("table", { name: "Cockpit handoff queue" });
+    expect(within(handoffTable).getByText("mkt-event")).toBeInTheDocument();
+    expect(within(handoffTable).getByText("poly-opp-event")).toBeInTheDocument();
+  });
+
+  it("uses shadow signal wording for an empty shadow table", async () => {
+    const client = await import("../api/client");
+    vi.mocked(client.fetchPolyAlphaCockpit).mockResolvedValue({
+      opportunities: mockPolyAlphaOpportunities,
+      scanRuns: mockPolyAlphaScanRuns,
+      shadowSignals: [],
+      validations: [],
+      promotions: []
+    });
+
+    render(<AgentsPage />);
+
+    expect(await screen.findByText("No shadow signal rows")).toBeInTheDocument();
+    expect(screen.queryByText("No shadow signals have validation metrics.")).not.toBeInTheDocument();
   });
 });

@@ -346,9 +346,13 @@ export function AuditPage() {
   const polyAlphaEvidenceChain = useMemo<PolyAlphaEvidenceChainRow[]>(
     () =>
       polyAlphaEvidencePacks.map((pack) => {
-        const explorationDecision = polyAlphaExplorationDecisions.find(
-          (decision) => decision.opportunityId === pack.opportunityId || decision.evidencePackId === pack.id
+        const exactExplorationDecision = polyAlphaExplorationDecisions.find(
+          (decision) => decision.evidencePackId === pack.id
         );
+        const opportunityFallbackDecision = polyAlphaExplorationDecisions.find(
+          (decision) => decision.evidencePackId === "" && decision.opportunityId === pack.opportunityId
+        );
+        const explorationDecision = exactExplorationDecision ?? opportunityFallbackDecision;
         const polyAlphaExplorationEvent = polyAlphaAuditEvents.find(
           (event) =>
             event.action.startsWith("exploration") &&

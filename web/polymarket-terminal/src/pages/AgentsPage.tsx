@@ -18,6 +18,46 @@ import {
   mockPolyAlphaValidationResults
 } from "../data/mockTerminalData";
 
+const COCKPIT_HANDOFF_STORAGE_KEY = "poly-alpha-cockpit-handoffs";
+
+type CockpitHandoff = {
+  opportunityId: string;
+  venueMarketId: string;
+  title?: string;
+  createdAt?: string;
+};
+
+function isCockpitHandoff(value: unknown): value is CockpitHandoff {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "opportunityId" in value &&
+    "venueMarketId" in value &&
+    typeof value.opportunityId === "string" &&
+    typeof value.venueMarketId === "string"
+  );
+}
+
+function readCockpitHandoffs(): CockpitHandoff[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COCKPIT_HANDOFF_STORAGE_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter(isCockpitHandoff) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCockpitHandoffs(handoffs: CockpitHandoff[]) {
+  window.localStorage.setItem(COCKPIT_HANDOFF_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function upsertCockpitHandoff(handoffs: CockpitHandoff[], nextHandoff: CockpitHandoff) {
+  return [
+    nextHandoff,
+    ...handoffs.filter((handoff) => handoff.opportunityId !== nextHandoff.opportunityId)
+  ];
+}
+
 const initialCockpit: PolyAlphaCockpit = {
   opportunities: mockPolyAlphaOpportunities,
   scanRuns: mockPolyAlphaScanRuns,
@@ -163,8 +203,27 @@ const scanColumns: Array<DenseDataTableColumn<PolyAlphaScanRun>> = [
   }
 ];
 
+const handoffColumns: Array<DenseDataTableColumn<CockpitHandoff>> = [
+  {
+    key: "market",
+    header: "Market",
+    render: (row) => row.venueMarketId
+  },
+  {
+    key: "opportunity",
+    header: "Opportunity",
+    render: (row) => row.opportunityId
+  },
+  {
+    key: "title",
+    header: "Title",
+    render: (row) => row.title ?? ""
+  }
+];
+
 export function AgentsPage() {
   const [cockpit, setCockpit] = useState<PolyAlphaCockpit>(initialCockpit);
+  const [cockpitHandoffs, setCockpitHandoffs] = useState<CockpitHandoff[]>(readCockpitHandoffs);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -184,6 +243,27 @@ export function AgentsPage() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleCockpitHandoff(event: Event) {
+      const detail = (event as CustomEvent<unknown>).detail;
+
+      if (!isCockpitHandoff(detail)) {
+        return;
+      }
+
+      setCockpitHandoffs((current) => {
+        const nextHandoffs = upsertCockpitHandoff(current, detail);
+        writeCockpitHandoffs(nextHandoffs);
+        return nextHandoffs;
+      });
+    }
+
+    window.addEventListener("poly-alpha-cockpit-handoff", handleCockpitHandoff);
+    return () => {
+      window.removeEventListener("poly-alpha-cockpit-handoff", handleCockpitHandoff);
     };
   }, []);
 
@@ -229,6 +309,18 @@ export function AgentsPage() {
         Poly Alpha findings are advisory and paper-only. No live execution or order routing is exposed here.
       </p>
 
+      <div className="page-section">
+        <h2>Cockpit handoff queue</h2>
+        <DenseDataTable
+          caption="Cockpit handoff queue"
+          columns={handoffColumns}
+          rows={cockpitHandoffs}
+          getRowKey={(row) => row.opportunityId}
+          emptyTitle="No Cockpit handoffs"
+          emptyDescription="No market handoffs are queued."
+        />
+      </div>
+
       <div className="page-grid terminal-page-grid-compact">
         <div className="page-section">
           <h2>Today's opportunities</h2>
@@ -263,8 +355,8 @@ export function AgentsPage() {
             columns={shadowColumns}
             rows={shadowPerformance}
             getRowKey={(row) => row.id}
-            emptyTitle="No shadow performance"
-            emptyDescription="No shadow signals have validation metrics."
+            emptyTitle="No shadow signal rows"
+            emptyDescription="No shadow signal rows are available."
           />
         </div>
 
