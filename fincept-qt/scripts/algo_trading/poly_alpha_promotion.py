@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from typing import Any
 
@@ -99,7 +100,7 @@ def evaluate_promotion(
         "max_drawdown_threshold": _number(config, "max_drawdown_threshold"),
         "min_hit_rate": _number(config, "min_hit_rate"),
         "min_payoff_ratio": _number(config, "min_payoff_ratio"),
-        "min_capacity_multiple": float(config.get("min_capacity_multiple", 2.0)),
+        "min_capacity_multiple": _number(config, "min_capacity_multiple", 2.0),
     }
 
     decision, reason = _gate_decision(
@@ -307,15 +308,38 @@ def record_post_approval_skip(
         return False
     if bridge["features"].get("opportunity_id") != opportunity_id:
         return False
-    return update_opportunity_status(
-        conn,
-        opportunity_id=opportunity_id,
-        lifecycle_event="paper_fill_skipped",
-        primary_reason=reason,
-        updated_at=now,
-        expected_status="approved",
-        write_audit=True,
-    )
+    conn.execute("SAVEPOINT poly_alpha_promotion_bridge")
+    try:
+        updated = update_trade_proposal_status(
+            conn,
+            proposal_id,
+            "failed",
+            "polymarket_runner",
+            now,
+            reason,
+            deployment_id=bridge["deployment_id"],
+            expected_status="approved",
+        )
+        if not updated:
+            conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+            return False
+        updated = update_opportunity_status(
+            conn,
+            opportunity_id=opportunity_id,
+            lifecycle_event="paper_fill_skipped",
+            primary_reason=reason,
+            updated_at=now,
+            expected_status="approved",
+            write_audit=True,
+        )
+        if not updated:
+            raise ValueError("paper_fill_skipped opportunity lineage update failed")
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT poly_alpha_promotion_bridge")
+        conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+        raise
+    conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
+    return True
 
 
 def record_paper_fill_recorded(
@@ -404,6 +428,26 @@ def _gate_decision(
         return "reject", "missing_unresolved_edge_decay"
     if not trading_metrics.get("approval_latency_impact"):
         return "reject", "missing_approval_latency_impact"
+    invalid_numeric = _invalid_numeric_reason(
+        trading_metrics,
+        required_positive=("capacity", "paper_order_size"),
+        required_finite=(
+            "cost_adjusted_net_return",
+            "median_clv_after_costs",
+            "max_drawdown",
+            "hit_rate",
+            "payoff_ratio",
+        ),
+    )
+    if invalid_numeric is not None:
+        return "reject", invalid_numeric
+    invalid_numeric = _invalid_numeric_reason(
+        metrics,
+        required_positive=("min_capacity_multiple",),
+        required_finite=("max_drawdown_threshold", "min_hit_rate", "min_payoff_ratio"),
+    )
+    if invalid_numeric is not None:
+        return "reject", invalid_numeric
     if trading_metrics["cost_adjusted_net_return"] <= 0:
         return "reject", "non_positive_net_return"
     if trading_metrics["median_clv_after_costs"] <= 0:
@@ -437,7 +481,7 @@ def _prediction_metrics(validations: list[dict], config: dict[str, Any]) -> dict
     ]
     brier_score = _median([row["brier_score"] for row in resolved])
     calibration_error = _median([row["calibration_error"] for row in resolved])
-    unresolved_edge_decay = config.get("unresolved_metrics", {}).get("edge_decay")
+    unresolved_edge_decay = _finite_number(config.get("unresolved_metrics", {}).get("edge_decay"))
     if unresolved_edge_decay is None:
         unresolved_edge_decay = _median(
             [row["edge_decay"] for row in validations if row.get("edge_decay") is not None]
@@ -476,6 +520,8 @@ def _proposal_bridge(conn: sqlite3.Connection, proposal_id: str) -> dict:
     features = json.loads(row[2] or "{}")
     if features.get("source") != "poly_alpha" or features.get("paper_only") is not True:
         raise ValueError("Proposal is not a Poly Alpha paper proposal")
+    if not features.get("opportunity_id"):
+        raise ValueError("Poly Alpha paper proposal is missing opportunity_id")
     return {
         "deployment_id": row[0],
         "strategy_id": row[1],
@@ -496,17 +542,40 @@ def _reject_live_fields(value: Any) -> None:
             _reject_live_fields(nested)
 
 
-def _number(config: dict[str, Any], key: str) -> float:
-    value = config.get(key)
+def _number(config: dict[str, Any], key: str, default: Any = None) -> float | None:
+    value = config.get(key, default)
+    return _finite_number(value)
+
+
+def _finite_number(value: Any) -> float | None:
     if value is None:
-        return 0.0
-    return float(value)
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _invalid_numeric_reason(
+    values: dict[str, float | None],
+    *,
+    required_positive: tuple[str, ...],
+    required_finite: tuple[str, ...],
+) -> str | None:
+    for key in required_positive:
+        if values.get(key) is None or values[key] <= 0:
+            return f"invalid_{key}"
+    for key in required_finite:
+        if values.get(key) is None:
+            return f"invalid_{key}"
+    return None
 
 
 def _median(values: list[float]) -> float | None:
-    if not values:
+    finite_values = [_finite_number(value) for value in values]
+    sorted_values = sorted(value for value in finite_values if value is not None)
+    if not sorted_values:
         return None
-    sorted_values = sorted(values)
     mid = len(sorted_values) // 2
     if len(sorted_values) % 2:
         return float(sorted_values[mid])

@@ -32,7 +32,9 @@ from polymarket_store import (
     ensure_polymarket_schema,
     list_audit_events,
     list_trade_proposals,
+    record_trade_proposal,
 )
+from polymarket_models import SignalDecision
 
 
 NOW = "2026-05-07T00:00:00Z"
@@ -330,6 +332,40 @@ def test_promotion_gate_rejects_or_watches_failed_requirements(
     assert decision["reason"] == reason
 
 
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [
+        ({"paper_order_size": 0.0}, "invalid_paper_order_size"),
+        ({"paper_order_size": -1.0}, "invalid_paper_order_size"),
+        ({"capacity": float("nan")}, "invalid_capacity"),
+        ({"cost_adjusted_net_return": float("nan")}, "invalid_cost_adjusted_net_return"),
+        ({"median_clv_after_costs": float("nan")}, "invalid_median_clv_after_costs"),
+        ({"max_drawdown": float("nan")}, "invalid_max_drawdown"),
+        ({"hit_rate": float("nan")}, "invalid_hit_rate"),
+        ({"payoff_ratio": float("nan")}, "invalid_payoff_ratio"),
+        ({"max_drawdown_threshold": float("nan")}, "invalid_max_drawdown_threshold"),
+        ({"min_hit_rate": float("nan")}, "invalid_min_hit_rate"),
+        ({"min_payoff_ratio": float("nan")}, "invalid_min_payoff_ratio"),
+    ],
+)
+def test_promotion_gate_rejects_invalid_numeric_metrics_without_promoting(override, reason):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(**override), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == reason
+    assert list_opportunities(conn)[0]["status"] == "rejected"
+    assert "NaN" not in conn.execute(
+        """
+        SELECT trading_metrics_json || metrics_json
+        FROM poly_alpha_promotion_decisions
+        """
+    ).fetchone()[0]
+
+
 def test_promotion_gate_rejects_blocking_validation_and_agent_findings():
     conn = _conn()
     opportunity_id, shadow_signal_id = _seed_validated_shadow(conn)
@@ -510,7 +546,40 @@ def test_manual_proposal_and_paper_fill_lifecycle_bridge_writes_poly_alpha_audit
     assert list_opportunities(conn)[0]["status"] == "skipped"
     assert list_opportunities(conn)[0]["primary_reason"] == "approval_latency_risk"
     assert "paper_fill_skipped" in [row["action"] for row in list_poly_alpha_audit_events(conn)]
-    assert list_trade_proposals(conn, "dep-1")[0]["fill_trade_id"] == ""
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert proposal["status"] == "failed"
+    assert proposal["decision_reason"] == "approval_latency_risk"
+    assert proposal["reason"] == "gate_passed"
+    assert proposal["fill_trade_id"] == ""
+
+
+def test_post_approval_skip_rolls_back_when_opportunity_update_fails():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    assert record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+    conn.execute(
+        f"""
+        CREATE TRIGGER reset_opportunity_before_skip_lineage
+        AFTER UPDATE OF status ON algo_polymarket_trade_proposals
+        WHEN NEW.proposal_id = '{proposal_id}' AND NEW.status = 'failed'
+        BEGIN
+            UPDATE poly_alpha_opportunities
+            SET status = 'proposed'
+            WHERE opportunity_id = 'opp-promo';
+        END
+        """
+    )
+
+    with pytest.raises(ValueError, match="paper_fill_skipped"):
+        record_post_approval_skip(conn, "opp-promo", proposal_id, "approval_latency_risk", NOW)
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert proposal["status"] == "approved"
+    assert proposal["decision_reason"] == "ok"
+    assert list_opportunities(conn)[0]["status"] == "approved"
+    assert "paper_fill_skipped" not in [row["action"] for row in list_poly_alpha_audit_events(conn)]
 
 
 def test_proposal_decision_rolls_back_when_opportunity_lineage_update_fails():
@@ -564,6 +633,34 @@ def test_post_approval_skip_requires_matching_opportunity_id():
     statuses = {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)}
     assert statuses["opp-promo"] == "approved"
     assert statuses["opp-wrong"] == "watch"
+
+
+def test_poly_alpha_proposal_bridge_rejects_missing_opportunity_id_as_value_error():
+    conn = _conn()
+    signal = SignalDecision(
+        asset_id="asset-1",
+        action="buy",
+        entry_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        reason="malformed",
+        features={"source": "poly_alpha", "paper_only": True},
+    )
+    proposal_id = record_trade_proposal(
+        conn,
+        "dep-1",
+        "strat-v1",
+        "market-1",
+        "condition-1",
+        signal,
+        25.0,
+        NOW,
+        "2026-05-08T00:00:00Z",
+    )
+
+    with pytest.raises(ValueError, match="opportunity_id"):
+        record_post_approval_skip(conn, "opp-promo", proposal_id, "approval_latency_risk", NOW)
 
 
 def test_paper_fill_requires_matching_opportunity_id_without_half_success():
