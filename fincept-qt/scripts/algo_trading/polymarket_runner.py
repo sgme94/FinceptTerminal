@@ -262,6 +262,11 @@ def _process_entries(conn, deployment_id, strategy_id, positions, exited_assets,
         result["fills"] += 1
 
 
+def _is_poly_alpha_paper_proposal(proposal: dict) -> bool:
+    features = proposal.get("features") or {}
+    return features.get("source") == "poly_alpha" and features.get("paper_only") is True
+
+
 def _process_approved_proposals(conn, deployment_id, positions, books, source, cfg, now, result) -> None:
     approved = [
         proposal
@@ -269,6 +274,9 @@ def _process_approved_proposals(conn, deployment_id, positions, books, source, c
         if proposal["status"] == "approved"
     ]
     for proposal in approved:
+        if _is_poly_alpha_paper_proposal(proposal):
+            # Poly Alpha proposals are finalized through poly_alpha_promotion bridge to preserve lineage.
+            continue
         if _is_expired(proposal.get("expires_at"), now):
             _transition_proposal(
                 conn,

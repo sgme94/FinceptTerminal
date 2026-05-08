@@ -17,6 +17,11 @@ from polymarket_store import (
 )
 
 
+class FailingOrderBookSource:
+    def fetch_clob_order_book(self, asset_id):
+        raise AssertionError(f"runner must not fetch order book for {asset_id}")
+
+
 def test_manual_approval_creates_proposal_without_fill(tmp_path):
     db_path = tmp_path / "bot.db"
     conn = sqlite3.connect(db_path)
@@ -350,6 +355,77 @@ def test_approved_proposal_rechecks_book_and_risk_before_paper_fill(tmp_path):
     assert trade_count == 1
     assert position_count == 1
     assert audit_actions == ["fill_simulated"]
+
+
+def test_poly_alpha_paper_approved_proposal_waits_for_bridge_without_runner_fill(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    conn.execute("CREATE TABLE algo_strategies (id TEXT PRIMARY KEY, bot_config TEXT)")
+    conn.execute(
+        "INSERT INTO algo_strategies (id, bot_config) VALUES (?, ?)",
+        (
+            "strat-1",
+            '{"approval_mode":"manual_approval","paper_order_size":10,"min_edge":0.01}',
+        ),
+    )
+    signal = SignalDecision(
+        asset_id="asset-1",
+        action="buy",
+        entry_price=0.40,
+        estimated_probability=0.55,
+        edge=0.15,
+        confidence=0.8,
+        reason="poly alpha bridge fill",
+        features={
+            "source": "poly_alpha",
+            "paper_only": True,
+            "opportunity_id": "opp-1",
+        },
+    )
+    proposal_id = record_trade_proposal(
+        conn,
+        deployment_id="dep-1",
+        strategy_id="strat-1",
+        market_id="market-1",
+        condition_id="cond-1",
+        signal=signal,
+        size=10.0,
+        now="2026-05-06T00:00:00Z",
+        expires_at="2026-05-06T00:02:00Z",
+    )
+    update_trade_proposal_status(
+        conn,
+        proposal_id=proposal_id,
+        status="approved",
+        decided_by="reviewer",
+        decided_at="2026-05-06T00:00:10Z",
+        decision_reason="poly alpha approve",
+    )
+    conn.commit()
+    conn.close()
+
+    result = run_polymarket_cycle(
+        db_path=str(db_path),
+        deployment_id="dep-1",
+        strategy_id="strat-1",
+        market_payload={"fetched_at": "2026-05-06T00:00:20Z", "data": []},
+        order_books=None,
+        source=FailingOrderBookSource(),
+        now="2026-05-06T00:00:20Z",
+    )
+
+    conn = sqlite3.connect(db_path)
+    proposal = list_trade_proposals(conn, deployment_id="dep-1")[0]
+    trade_count = conn.execute("SELECT COUNT(*) FROM algo_polymarket_paper_trades").fetchone()[0]
+    audit_count = conn.execute("SELECT COUNT(*) FROM algo_polymarket_audit_events").fetchone()[0]
+    conn.close()
+
+    assert result["fills"] == 0
+    assert proposal["status"] == "approved"
+    assert proposal["fill_trade_id"] == ""
+    assert trade_count == 0
+    assert audit_count == 0
 
 
 def test_cancelled_proposal_snapshot_cannot_be_filled(tmp_path):

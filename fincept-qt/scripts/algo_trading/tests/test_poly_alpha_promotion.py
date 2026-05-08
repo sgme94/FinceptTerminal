@@ -252,6 +252,38 @@ def test_promotion_gate_rejects_missing_approval_latency_impact(override):
     assert decision["reason"] == "missing_approval_latency_impact"
 
 
+@pytest.mark.parametrize(
+    "approval_latency_impact",
+    [
+        {"median_seconds": float("nan")},
+        {"distribution": {"p50_seconds": 12, "p95_seconds": float("inf")}},
+        {"median_seconds": "bad"},
+    ],
+)
+def test_promotion_gate_rejects_invalid_approval_latency_impact_without_writing_nan(
+    approval_latency_impact,
+):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(
+        conn,
+        "shadow-promo",
+        _passing_config(approval_latency_impact=approval_latency_impact),
+        NOW,
+    )
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "invalid_approval_latency_impact"
+    assert "NaN" not in conn.execute(
+        """
+        SELECT trading_metrics_json
+        FROM poly_alpha_promotion_decisions
+        """
+    ).fetchone()[0]
+
+
 def test_promotion_gate_requires_resolved_prediction_metrics_only_when_resolved_outcomes_exist():
     conn = _conn()
     _seed_validated_shadow(conn)
@@ -364,6 +396,17 @@ def test_promotion_gate_rejects_invalid_numeric_metrics_without_promoting(overri
         FROM poly_alpha_promotion_decisions
         """
     ).fetchone()[0]
+
+
+def test_promotion_gate_rejects_invalid_sample_metrics_without_raw_exception():
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(sample_count="bad"), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "invalid_promotion_metrics"
 
 
 def test_promotion_gate_rejects_blocking_validation_and_agent_findings():
@@ -736,9 +779,11 @@ def test_paper_fill_rolls_back_when_opportunity_lineage_update_fails():
     "live_key",
     [
         "api_key",
+        "api_token",
         "api_passphrase",
         "api_secret",
         "authenticated_clob_client",
+        "clob",
         "clob_api_key",
         "clob_api_passphrase",
         "clob_api_secret",
@@ -750,6 +795,7 @@ def test_paper_fill_rolls_back_when_opportunity_lineage_update_fails():
         "order_client",
         "order_endpoint",
         "private_key",
+        "secret",
     ],
 )
 def test_live_trading_fields_are_rejected(live_key):

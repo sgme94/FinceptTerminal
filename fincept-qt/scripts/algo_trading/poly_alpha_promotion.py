@@ -26,7 +26,9 @@ _LIVE_TRADING_KEYS = {
     "api_key",
     "api_passphrase",
     "api_secret",
+    "api_token",
     "authenticated_clob_client",
+    "clob",
     "clob_api_key",
     "clob_api_passphrase",
     "clob_api_secret",
@@ -38,7 +40,17 @@ _LIVE_TRADING_KEYS = {
     "order_client",
     "order_endpoint",
     "private_key",
+    "secret",
 }
+_LIVE_TRADING_KEY_TOKENS = (
+    "secret",
+    "private_key",
+    "api_key",
+    "api_token",
+    "clob",
+    "order_endpoint",
+    "order_client",
+)
 
 _MIN_PROMOTION_SAMPLES_FLOOR = 30
 _MIN_PROMOTION_HISTORY_DAYS_FLOOR = 90
@@ -87,14 +99,16 @@ def evaluate_promotion(
         "paper_only": True,
     }
     metrics = {
-        "sample_count": int(config.get("sample_count", 0)),
-        "history_days": int(config.get("history_days", 0)),
-        "min_promotion_samples": max(
-            int(config.get("min_promotion_samples", _MIN_PROMOTION_SAMPLES_FLOOR)),
+        "sample_count": _integer_metric(config, "sample_count", 0),
+        "history_days": _integer_metric(config, "history_days", 0),
+        "min_promotion_samples": _minimum_integer_metric(
+            config,
+            "min_promotion_samples",
             _MIN_PROMOTION_SAMPLES_FLOOR,
         ),
-        "min_promotion_history_days": max(
-            int(config.get("min_promotion_history_days", _MIN_PROMOTION_HISTORY_DAYS_FLOOR)),
+        "min_promotion_history_days": _minimum_integer_metric(
+            config,
+            "min_promotion_history_days",
             _MIN_PROMOTION_HISTORY_DAYS_FLOOR,
         ),
         "max_drawdown_threshold": _number(config, "max_drawdown_threshold"),
@@ -428,6 +442,9 @@ def _gate_decision(
         return "reject", "missing_unresolved_edge_decay"
     if not trading_metrics.get("approval_latency_impact"):
         return "reject", "missing_approval_latency_impact"
+    if not _approval_latency_impact_is_valid(trading_metrics["approval_latency_impact"]):
+        trading_metrics["approval_latency_impact"] = {}
+        return "reject", "invalid_approval_latency_impact"
     invalid_numeric = _invalid_numeric_reason(
         trading_metrics,
         required_positive=("capacity", "paper_order_size"),
@@ -448,6 +465,8 @@ def _gate_decision(
     )
     if invalid_numeric is not None:
         return "reject", invalid_numeric
+    if _invalid_promotion_metrics(metrics):
+        return "reject", "invalid_promotion_metrics"
     if trading_metrics["cost_adjusted_net_return"] <= 0:
         return "reject", "non_positive_net_return"
     if trading_metrics["median_clv_after_costs"] <= 0:
@@ -533,13 +552,20 @@ def _proposal_bridge(conn: sqlite3.Connection, proposal_id: str) -> dict:
 
 def _reject_live_fields(value: Any) -> None:
     if isinstance(value, dict):
-        if _LIVE_TRADING_KEYS.intersection(value):
-            raise ValueError("MVP paper-only bridge rejects live trading fields")
-        for nested in value.values():
+        for key, nested in value.items():
+            if _is_live_trading_key(key):
+                raise ValueError("MVP paper-only bridge rejects live trading fields")
             _reject_live_fields(nested)
     elif isinstance(value, list):
         for nested in value:
             _reject_live_fields(nested)
+
+
+def _is_live_trading_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    normalized = key.lower()
+    return normalized in _LIVE_TRADING_KEYS or any(token in normalized for token in _LIVE_TRADING_KEY_TOKENS)
 
 
 def _number(config: dict[str, Any], key: str, default: Any = None) -> float | None:
@@ -550,10 +576,54 @@ def _number(config: dict[str, Any], key: str, default: Any = None) -> float | No
 def _finite_number(value: Any) -> float | None:
     if value is None:
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
     if not math.isfinite(number):
         return None
     return number
+
+
+def _integer_metric(config: dict[str, Any], key: str, default: Any) -> int | None:
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return None
+    number = _finite_number(value)
+    if number is None or not number.is_integer():
+        return None
+    return int(number)
+
+
+def _minimum_integer_metric(config: dict[str, Any], key: str, floor: int) -> int | None:
+    value = _integer_metric(config, key, floor)
+    if value is None:
+        return None
+    return max(value, floor)
+
+
+def _invalid_promotion_metrics(metrics: dict) -> bool:
+    for key in ("sample_count", "history_days", "min_promotion_samples", "min_promotion_history_days"):
+        value = metrics.get(key)
+        if value is None or value < 0:
+            return True
+    return False
+
+
+def _approval_latency_impact_is_valid(value: Any) -> bool:
+    if not isinstance(value, dict) or not value:
+        return False
+    return _numeric_leaf_tree_is_finite(value)
+
+
+def _numeric_leaf_tree_is_finite(value: Any) -> bool:
+    if isinstance(value, dict):
+        return bool(value) and all(_numeric_leaf_tree_is_finite(nested) for nested in value.values())
+    if isinstance(value, list):
+        return bool(value) and all(_numeric_leaf_tree_is_finite(nested) for nested in value)
+    if isinstance(value, bool):
+        return False
+    return _finite_number(value) is not None
 
 
 def _invalid_numeric_reason(
