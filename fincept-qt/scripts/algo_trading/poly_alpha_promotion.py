@@ -54,6 +54,8 @@ _LIVE_TRADING_KEY_TOKENS = (
 
 _MIN_PROMOTION_SAMPLES_FLOOR = 30
 _MIN_PROMOTION_HISTORY_DAYS_FLOOR = 90
+_PAYOFF_RATIO_HIT_RATE_EXCEPTION = 1.5
+_HIT_RATE_PAYOFF_RATIO_EXCEPTION = 0.60
 
 
 def evaluate_promotion(
@@ -92,9 +94,9 @@ def evaluate_promotion(
         "approval_latency_impact": config.get("approval_latency_impact", {}),
     }
     risk_checks = {
-        "lookahead_check_passed": bool(config.get("lookahead_check_passed", False)),
-        "survivorship_check_passed": bool(config.get("survivorship_check_passed", False)),
-        "risk_reviewer_approved": bool(config.get("risk_reviewer_approved", False)),
+        "lookahead_check_passed": config.get("lookahead_check_passed") is True,
+        "survivorship_check_passed": config.get("survivorship_check_passed") is True,
+        "risk_reviewer_approved": config.get("risk_reviewer_approved") is True,
         "risk_reviewer": config.get("risk_reviewer", ""),
         "paper_only": True,
     }
@@ -465,7 +467,7 @@ def _gate_decision(
     )
     if invalid_numeric is not None:
         return "reject", invalid_numeric
-    if _invalid_promotion_metrics(metrics):
+    if _invalid_promotion_metrics(metrics, trading_metrics):
         return "reject", "invalid_promotion_metrics"
     if trading_metrics["cost_adjusted_net_return"] <= 0:
         return "reject", "non_positive_net_return"
@@ -473,9 +475,17 @@ def _gate_decision(
         return "reject", "non_positive_median_clv"
     if trading_metrics["max_drawdown"] < metrics["max_drawdown_threshold"]:
         return "reject", "drawdown_below_threshold"
-    if trading_metrics["hit_rate"] < metrics["min_hit_rate"]:
+    hit_rate_ok = (
+        trading_metrics["hit_rate"] >= metrics["min_hit_rate"]
+        or trading_metrics["payoff_ratio"] >= _PAYOFF_RATIO_HIT_RATE_EXCEPTION
+    )
+    payoff_ratio_ok = (
+        trading_metrics["payoff_ratio"] >= metrics["min_payoff_ratio"]
+        or trading_metrics["hit_rate"] >= _HIT_RATE_PAYOFF_RATIO_EXCEPTION
+    )
+    if not hit_rate_ok:
         return "reject", "hit_rate_below_threshold"
-    if trading_metrics["payoff_ratio"] < metrics["min_payoff_ratio"]:
+    if not payoff_ratio_ok:
         return "reject", "payoff_ratio_below_threshold"
     if trading_metrics["capacity"] < metrics["min_capacity_multiple"] * trading_metrics["paper_order_size"]:
         return "reject", "capacity_too_small"
@@ -602,10 +612,18 @@ def _minimum_integer_metric(config: dict[str, Any], key: str, floor: int) -> int
     return max(value, floor)
 
 
-def _invalid_promotion_metrics(metrics: dict) -> bool:
+def _invalid_promotion_metrics(metrics: dict, trading_metrics: dict) -> bool:
     for key in ("sample_count", "history_days", "min_promotion_samples", "min_promotion_history_days"):
         value = metrics.get(key)
         if value is None or value < 0:
+            return True
+    for key in ("hit_rate", "min_hit_rate"):
+        value = trading_metrics.get(key) if key == "hit_rate" else metrics.get(key)
+        if value is None or value < 0 or value > 1:
+            return True
+    for key in ("payoff_ratio", "min_payoff_ratio"):
+        value = trading_metrics.get(key) if key == "payoff_ratio" else metrics.get(key)
+        if value is None or value <= 0:
             return True
     return False
 

@@ -367,6 +367,49 @@ def test_promotion_gate_rejects_or_watches_failed_requirements(
 @pytest.mark.parametrize(
     ("override", "reason"),
     [
+        ({"lookahead_check_passed": "false"}, "lookahead_check_failed"),
+        ({"survivorship_check_passed": "false"}, "survivorship_check_failed"),
+        ({"risk_reviewer_approved": "false"}, "risk_reviewer_not_approved"),
+        ({"lookahead_check_passed": "not-a-bool"}, "lookahead_check_failed"),
+    ],
+)
+def test_promotion_gate_requires_literal_true_for_risk_checks(override, reason):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(**override), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == reason
+
+
+@pytest.mark.parametrize(
+    ("override", "expected_decision", "reason"),
+    [
+        ({"hit_rate": 0.50, "payoff_ratio": 1.50}, "promote", "gate_passed"),
+        ({"hit_rate": 0.60, "payoff_ratio": 1.00}, "promote", "gate_passed"),
+        ({"hit_rate": 0.50, "payoff_ratio": 1.00}, "reject", "hit_rate_below_threshold"),
+    ],
+)
+def test_promotion_gate_allows_hit_rate_and_payoff_ratio_exceptions(
+    override,
+    expected_decision,
+    reason,
+):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(**override), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == expected_decision
+    assert decision["reason"] == reason
+
+
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [
         ({"paper_order_size": 0.0}, "invalid_paper_order_size"),
         ({"paper_order_size": -1.0}, "invalid_paper_order_size"),
         ({"capacity": float("nan")}, "invalid_capacity"),
@@ -396,6 +439,30 @@ def test_promotion_gate_rejects_invalid_numeric_metrics_without_promoting(overri
         FROM poly_alpha_promotion_decisions
         """
     ).fetchone()[0]
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"hit_rate": -0.01},
+        {"hit_rate": 1.01},
+        {"payoff_ratio": -0.01},
+        {"payoff_ratio": 0.0},
+        {"min_hit_rate": -0.01},
+        {"min_hit_rate": 1.01},
+        {"min_payoff_ratio": -0.01},
+        {"min_payoff_ratio": 0.0},
+    ],
+)
+def test_promotion_gate_rejects_invalid_promotion_metric_ranges(override):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+
+    evaluate_promotion(conn, "shadow-promo", _passing_config(**override), NOW)
+
+    decision = list_promotion_decisions(conn)[0]
+    assert decision["decision"] == "reject"
+    assert decision["reason"] == "invalid_promotion_metrics"
 
 
 def test_promotion_gate_rejects_invalid_sample_metrics_without_raw_exception():
