@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   approveTradeProposal,
   buildPolyAlphaSignalFilters,
+  fetchPolyAlphaAuditEvents,
   fetchPolyAlphaCockpit,
   fetchPolyAlphaDocuments,
   fetchPolyAlphaEvents,
+  fetchPolyAlphaExplorationDecisions,
   fetchPolyAlphaFindings,
   fetchPolyAlphaLinks,
   fetchPolyAlphaMarketSnapshots,
@@ -769,6 +771,40 @@ describe("terminal api client", () => {
             created_at: "2026-05-06T01:04:00.000Z"
           }
         ]
+      },
+      "http://localhost:8765/api/poly-alpha/exploration-decisions": {
+        items: [
+          {
+            exploration_id: "explore-api",
+            opportunity_id: "opp-api",
+            evidence_pack_id: "evidence-api",
+            strategy_version_id: "strategy-api",
+            decision: "pass",
+            reason: "enough samples",
+            metrics: { historicalSamples: 12 },
+            created_at: "2026-05-06T10:09:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/audit": {
+        items: [
+          {
+            audit_id: "audit-paper-fill",
+            action: "paper_fill_skipped",
+            entity_type: "opportunity",
+            entity_id: "opp-api",
+            opportunity_id: "opp-api",
+            strategy_version_id: "strategy-api",
+            actor_type: "system",
+            actor_id: "poly-alpha",
+            before: { status: "watch" },
+            after: { status: "skipped" },
+            result: "skipped",
+            reason: "paper only",
+            request_id: "req-api",
+            created_at: "2026-05-06T10:17:00.000Z"
+          }
+        ]
       }
     };
     const fetchMock = vi.fn((url: string) => {
@@ -836,6 +872,38 @@ describe("terminal api client", () => {
     await expect(fetchPolyAlphaFindings()).resolves.toEqual([
       expect.objectContaining({ id: "finding-1", runId: "research-1", source: "api" })
     ]);
+    await expect(fetchPolyAlphaExplorationDecisions()).resolves.toEqual([
+      expect.objectContaining({
+        id: "explore-api",
+        opportunityId: "opp-api",
+        evidencePackId: "evidence-api",
+        strategyVersionId: "strategy-api",
+        decision: "pass",
+        reason: "enough samples",
+        metrics: { historicalSamples: 12 },
+        createdAt: "2026-05-06T10:09:00.000Z",
+        source: "api"
+      })
+    ]);
+    await expect(fetchPolyAlphaAuditEvents()).resolves.toEqual([
+      expect.objectContaining({
+        id: "audit-paper-fill",
+        action: "paper_fill_skipped",
+        entityType: "opportunity",
+        entityId: "opp-api",
+        opportunityId: "opp-api",
+        strategyVersionId: "strategy-api",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: { status: "watch" },
+        after: { status: "skipped" },
+        result: "skipped",
+        reason: "paper only",
+        requestId: "req-api",
+        createdAt: "2026-05-06T10:17:00.000Z",
+        source: "api"
+      })
+    ]);
 
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/opportunities");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/scan-runs");
@@ -846,6 +914,8 @@ describe("terminal api client", () => {
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/links");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/research-runs");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/findings");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/exploration-decisions");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/audit");
   });
 
   it("combines poly alpha cockpit resources from their backend api endpoints", async () => {

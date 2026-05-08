@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  fetchPolyAlphaAuditEvents,
   fetchPolyAlphaEvidencePacks,
+  fetchPolyAlphaExplorationDecisions,
   fetchPolyAlphaPromotions,
   getAuditEvents,
   getCandidates,
@@ -238,9 +240,10 @@ export function AuditPage() {
     useState<PolyAlphaEvidencePack[]>(mockPolyAlphaEvidencePacks);
   const [polyAlphaPromotions, setPolyAlphaPromotions] =
     useState<PolyAlphaPromotionDecision[]>(mockPolyAlphaPromotionDecisions);
-  const [polyAlphaExplorationDecisions] =
+  const [polyAlphaExplorationDecisions, setPolyAlphaExplorationDecisions] =
     useState<PolyAlphaExplorationDecision[]>(mockPolyAlphaExplorationDecisions);
-  const [polyAlphaAuditEvents] = useState<PolyAlphaAuditEvent[]>(mockPolyAlphaAuditEvents);
+  const [polyAlphaAuditEvents, setPolyAlphaAuditEvents] =
+    useState<PolyAlphaAuditEvent[]>(mockPolyAlphaAuditEvents);
   const [deploymentFilter, setDeploymentFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -259,6 +262,8 @@ export function AuditPage() {
       getSignals(),
       getSkips(),
       fetchPolyAlphaEvidencePacks(),
+      fetchPolyAlphaExplorationDecisions(),
+      fetchPolyAlphaAuditEvents(),
       fetchPolyAlphaPromotions()
     ])
       .then(
@@ -271,6 +276,8 @@ export function AuditPage() {
           nextSignals,
           nextSkips,
           nextEvidencePacks,
+          nextExplorationDecisions,
+          nextPolyAlphaAuditEvents,
           nextPromotions
         ]) => {
         if (isMounted) {
@@ -282,6 +289,8 @@ export function AuditPage() {
           setSignals(nextSignals);
           setSkips(nextSkips);
           setPolyAlphaEvidencePacks(nextEvidencePacks);
+          setPolyAlphaExplorationDecisions(nextExplorationDecisions);
+          setPolyAlphaAuditEvents(nextPolyAlphaAuditEvents);
           setPolyAlphaPromotions(nextPromotions);
         }
       })
@@ -340,13 +349,22 @@ export function AuditPage() {
         const explorationDecision = polyAlphaExplorationDecisions.find(
           (decision) => decision.opportunityId === pack.opportunityId || decision.evidencePackId === pack.id
         );
-        const explorationEvent = events.find(
+        const polyAlphaExplorationEvent = polyAlphaAuditEvents.find(
+          (event) =>
+            event.action.startsWith("exploration") &&
+            (event.opportunityId === pack.opportunityId ||
+              event.entityId === pack.opportunityId ||
+              event.entityId === explorationDecision?.id)
+        );
+        const generalExplorationEvent = events.find(
           (event) =>
             event.action?.startsWith("exploration") &&
             (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
         );
         const polyAlphaPaperFillEvent = polyAlphaAuditEvents.find(
-          (event) => event.action === "paper_fill_skipped" && event.opportunityId === pack.opportunityId
+          (event) =>
+            event.action === "paper_fill_skipped" &&
+            (event.opportunityId === pack.opportunityId || event.entityId === pack.opportunityId)
         );
         const generalPaperFillEvent = events.find(
           (event) =>
@@ -354,16 +372,13 @@ export function AuditPage() {
             (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
         );
         const promotion = polyAlphaPromotions.find((decision) => decision.opportunityId === pack.opportunityId);
-        const paperFillAction =
-          generalPaperFillEvent?.action ??
-          polyAlphaPaperFillEvent?.action ??
-          (promotion?.decision === "watch" ? "paper_fill_skipped" : "");
+        const paperFillAction = polyAlphaPaperFillEvent?.action ?? generalPaperFillEvent?.action ?? "";
 
         return {
           id: pack.id,
           opportunityId: pack.opportunityId,
           evidencePackId: pack.id,
-          explorationAction: explorationEvent?.action ?? (explorationDecision ? "exploration_decision" : ""),
+          explorationAction: polyAlphaExplorationEvent?.action ?? generalExplorationEvent?.action ?? "",
           explorationId: explorationDecision?.id ?? "",
           explorationDecision: explorationDecision?.decision ?? "",
           paperFillAction,

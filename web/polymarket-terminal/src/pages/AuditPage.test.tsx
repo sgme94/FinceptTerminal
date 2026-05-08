@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -6,11 +6,14 @@ import type {
   MarketCandidate,
   PaperPosition,
   PaperTrade,
+  PolyAlphaAuditEvent,
+  PolyAlphaExplorationDecision,
   SignalRow,
   SkipRow,
   TradeProposal
 } from "../api/types";
 import {
+  fetchPolyAlphaAuditEvents,
   getAuditEvents,
   getCandidates,
   getPaperPositions,
@@ -19,13 +22,16 @@ import {
   getSkips,
   getTradeProposals,
   fetchPolyAlphaEvidencePacks,
+  fetchPolyAlphaExplorationDecisions,
   fetchPolyAlphaPromotions
 } from "../api/client";
 import { mockPolyAlphaEvidencePacks, mockPolyAlphaPromotionDecisions } from "../data/mockTerminalData";
 import { AuditPage } from "./AuditPage";
 
 vi.mock("../api/client", () => ({
+  fetchPolyAlphaAuditEvents: vi.fn(),
   fetchPolyAlphaEvidencePacks: vi.fn(),
+  fetchPolyAlphaExplorationDecisions: vi.fn(),
   fetchPolyAlphaPromotions: vi.fn(),
   getAuditEvents: vi.fn(),
   getCandidates: vi.fn(),
@@ -210,8 +216,43 @@ const skips: SkipRow[] = [
   }
 ];
 
+const apiExplorationDecisions: PolyAlphaExplorationDecision[] = [
+  {
+    source: "api",
+    id: "api-explore-fed",
+    opportunityId: "poly-opp-fed-june",
+    evidencePackId: "poly-evidence-fed",
+    strategyVersionId: "strategy-v1",
+    decision: "pass",
+    reason: "enough samples",
+    metrics: { historicalSamples: 12 },
+    createdAt: "2026-05-06T10:09:00.000Z"
+  }
+];
+
+const apiPolyAlphaAuditEvents: PolyAlphaAuditEvent[] = [
+  {
+    source: "api",
+    id: "api-paper-fill-skipped",
+    action: "paper_fill_skipped",
+    entityType: "opportunity",
+    entityId: "poly-opp-fed-june",
+    opportunityId: "poly-opp-fed-june",
+    strategyVersionId: "strategy-v1",
+    actorType: "system",
+    actorId: "poly-alpha",
+    before: { status: "watch" },
+    after: { status: "skipped" },
+    result: "skipped",
+    reason: "paper only",
+    requestId: "req-api",
+    createdAt: "2026-05-06T10:17:00.000Z"
+  }
+];
+
 describe("AuditPage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents);
     vi.mocked(getCandidates).mockResolvedValue(candidates);
     vi.mocked(getPaperPositions).mockResolvedValue(positions);
@@ -220,6 +261,8 @@ describe("AuditPage", () => {
     vi.mocked(getSkips).mockResolvedValue(skips);
     vi.mocked(getTradeProposals).mockResolvedValue(proposals);
     vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue(mockPolyAlphaEvidencePacks);
+    vi.mocked(fetchPolyAlphaExplorationDecisions).mockResolvedValue(apiExplorationDecisions);
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([]);
     vi.mocked(fetchPolyAlphaPromotions).mockResolvedValue(mockPolyAlphaPromotionDecisions);
   });
 
@@ -323,17 +366,34 @@ describe("AuditPage", () => {
     expect(within(chain).getByText("poly-promotion-fed")).toBeInTheDocument();
   });
 
-  it("falls back to Poly Alpha exploration and audit mocks when general audit events omit the evidence chain", async () => {
+  it("loads Poly Alpha exploration and audit resources when general audit omits the evidence chain", async () => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue(apiPolyAlphaAuditEvents);
 
     render(<AuditPage />);
 
     expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchPolyAlphaExplorationDecisions).toHaveBeenCalledTimes(1));
+    expect(fetchPolyAlphaAuditEvents).toHaveBeenCalledTimes(1);
 
     const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
-    expect(within(chain).getByText("poly-explore-fed")).toBeInTheDocument();
+    expect(within(chain).getByText("api-explore-fed")).toBeInTheDocument();
     expect(within(chain).getByText("pass")).toBeInTheDocument();
     expect(within(chain).getByText("paper_fill_skipped")).toBeInTheDocument();
     expect(within(chain).getByText("poly-promotion-fed")).toBeInTheDocument();
+  });
+
+  it("does not synthesize paper fill skips from watch promotions without an audit event", async () => {
+    vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([]);
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchPolyAlphaAuditEvents).toHaveBeenCalledTimes(1));
+
+    const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
+    expect(within(chain).getByText("api-explore-fed")).toBeInTheDocument();
+    expect(within(chain).queryByText("paper_fill_skipped")).not.toBeInTheDocument();
   });
 });

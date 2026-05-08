@@ -6,9 +6,11 @@ import {
   mockMarketCandidates,
   mockPaperPositions,
   mockPaperTrades,
+  mockPolyAlphaAuditEvents,
   mockPolyAlphaDocuments,
   mockPolyAlphaEvents,
   mockPolyAlphaEvidencePacks,
+  mockPolyAlphaExplorationDecisions,
   mockPolyAlphaFindings,
   mockPolyAlphaLinks,
   mockPolyAlphaMarketSnapshots,
@@ -32,11 +34,13 @@ import type {
   PaperPosition,
   PaperTrade,
   PolyAlphaAgentFinding,
+  PolyAlphaAuditEvent,
   PolyAlphaCockpit,
   PolyAlphaDocument,
   PolyAlphaEvent,
   PolyAlphaEventMarketLink,
   PolyAlphaEvidencePack,
+  PolyAlphaExplorationDecision,
   PolyAlphaMarketSnapshot,
   PolyAlphaOpportunity,
   PolyAlphaPromotionDecision,
@@ -644,6 +648,40 @@ function mapPolyAlphaEvidencePack(item: PolyAlphaItemResponse): PolyAlphaEvidenc
   };
 }
 
+function mapPolyAlphaExplorationDecision(item: PolyAlphaItemResponse): PolyAlphaExplorationDecision {
+  return {
+    id: stringValue(item.exploration_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
+    evidencePackId: stringValue(item.evidence_pack_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    decision: stringValue(item.decision),
+    reason: stringValue(item.reason),
+    metrics: recordValue(item.metrics),
+    createdAt: stringValue(item.created_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaAuditEvent(item: PolyAlphaItemResponse): PolyAlphaAuditEvent {
+  return {
+    id: stringValue(item.audit_id ?? item.id),
+    action: stringValue(item.action),
+    entityType: stringValue(item.entity_type),
+    entityId: stringValue(item.entity_id),
+    opportunityId: stringValue(item.opportunity_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    actorType: stringValue(item.actor_type),
+    actorId: stringValue(item.actor_id),
+    before: recordValue(item.before),
+    after: recordValue(item.after),
+    result: stringValue(item.result),
+    reason: stringValue(item.reason),
+    requestId: stringValue(item.request_id),
+    createdAt: stringValue(item.created_at),
+    source: "api"
+  };
+}
+
 function mapPolyAlphaMarketSnapshot(item: PolyAlphaItemResponse): PolyAlphaMarketSnapshot {
   return {
     id: stringValue(item.snapshot_id ?? item.id),
@@ -966,6 +1004,18 @@ export async function fetchPolyAlphaEvidencePacks(): Promise<PolyAlphaEvidencePa
     mapPolyAlphaEvidencePack,
     mockPolyAlphaEvidencePacks
   );
+}
+
+export async function fetchPolyAlphaExplorationDecisions(): Promise<PolyAlphaExplorationDecision[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/exploration-decisions",
+    mapPolyAlphaExplorationDecision,
+    mockPolyAlphaExplorationDecisions
+  );
+}
+
+export async function fetchPolyAlphaAuditEvents(): Promise<PolyAlphaAuditEvent[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/audit", mapPolyAlphaAuditEvent, mockPolyAlphaAuditEvents);
 }
 
 export async function fetchPolyAlphaShadowSignals(): Promise<PolyAlphaShadowSignal[]> {
