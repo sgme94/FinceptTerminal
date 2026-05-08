@@ -22,7 +22,61 @@ from polymarket_store import (  # noqa: E402
     record_audit_event,
     update_trade_proposal_status,
 )
+from poly_alpha_promotion import (  # noqa: E402
+    create_paper_proposal_from_promotion,
+    evaluate_promotion,
+)
 from poly_alpha_promotion import record_proposal_decision as record_poly_alpha_proposal_decision  # noqa: E402
+from poly_alpha_scanner import (  # noqa: E402
+    build_evidence_pack,
+    decide_exploration,
+    run_deterministic_scan,
+)
+from poly_alpha_store import (  # noqa: E402
+    ensure_poly_alpha_schema,
+    list_agent_findings,
+    list_config_versions,
+    list_documents,
+    list_event_market_links,
+    list_events,
+    list_evidence_packs,
+    list_exploration_decisions,
+    list_market_snapshots,
+    list_opportunities,
+    list_poly_alpha_audit_events,
+    list_promotion_decisions,
+    list_research_runs,
+    list_scan_results,
+    list_scan_runs,
+    list_shadow_signals,
+    list_source_sets,
+    list_strategy_versions,
+    list_validation_results,
+    record_research_run,
+)
+from poly_alpha_validation import run_signal_validation  # noqa: E402
+
+
+POLY_ALPHA_LISTERS = {
+    "config-versions": list_config_versions,
+    "source-sets": list_source_sets,
+    "strategy-versions": list_strategy_versions,
+    "documents": list_documents,
+    "events": list_events,
+    "links": list_event_market_links,
+    "research-runs": list_research_runs,
+    "findings": list_agent_findings,
+    "scan-runs": list_scan_runs,
+    "scan-results": list_scan_results,
+    "opportunities": list_opportunities,
+    "evidence-packs": list_evidence_packs,
+    "exploration-decisions": list_exploration_decisions,
+    "market-snapshots": list_market_snapshots,
+    "shadow-signals": list_shadow_signals,
+    "validations": list_validation_results,
+    "promotions": list_promotion_decisions,
+    "audit": list_poly_alpha_audit_events,
+}
 
 
 class ProposalNotFoundError(Exception):
@@ -84,11 +138,119 @@ class PolymarketRepository:
     def connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
         ensure_polymarket_schema(conn)
+        ensure_poly_alpha_schema(conn)
         try:
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+    def list_poly_alpha(self, resource: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return POLY_ALPHA_LISTERS[resource](conn)
+
+    def start_manual_research_run(
+        self,
+        *,
+        opportunity_id: str,
+        evidence_pack_id: str,
+        strategy_version_id: str,
+        event_id: str,
+        venue: str,
+        venue_market_id: str,
+        requested_by: str,
+        config: dict[str, Any],
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            return record_research_run(
+                conn,
+                trigger_type="manual_task",
+                opportunity_id=opportunity_id,
+                evidence_pack_id=evidence_pack_id,
+                strategy_version_id=strategy_version_id,
+                event_id=event_id,
+                venue=venue,
+                venue_market_id=venue_market_id,
+                requested_by=requested_by,
+                started_at=now,
+                status="running",
+                model_config=config,
+                created_at=now,
+                write_audit=True,
+            )
+
+    def run_poly_alpha_deterministic_scan(
+        self,
+        *,
+        strategy_version_id: str,
+        config: dict[str, Any],
+        source_documents: list[dict[str, Any]],
+        market_snapshots: list[dict[str, Any]],
+        now: str,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            return run_deterministic_scan(
+                conn,
+                strategy_version_id,
+                config,
+                source_documents,
+                market_snapshots,
+                now,
+            )
+
+    def build_poly_alpha_evidence_pack(
+        self,
+        *,
+        opportunity_id: str,
+        document_ids: list[str],
+        snapshot_ids: list[str],
+        event_ids: list[str],
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            return build_evidence_pack(conn, opportunity_id, document_ids, snapshot_ids, event_ids, now)
+
+    def decide_poly_alpha_exploration(
+        self,
+        *,
+        opportunity_id: str,
+        evidence_pack_id: str,
+        config: dict[str, Any],
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            return decide_exploration(conn, opportunity_id, evidence_pack_id, config, now)
+
+    def run_poly_alpha_validation(
+        self,
+        *,
+        shadow_signal_id: str,
+        config: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            return run_signal_validation(conn, shadow_signal_id, config, now)
+
+    def evaluate_poly_alpha_promotion(
+        self,
+        *,
+        shadow_signal_id: str,
+        config: dict[str, Any],
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            return evaluate_promotion(conn, shadow_signal_id, config, now)
+
+    def create_poly_alpha_paper_proposal(
+        self,
+        *,
+        promotion_id: str,
+        deployment_id: str,
+        now: str,
+    ) -> str:
+        with self.connect() as conn:
+            return create_paper_proposal_from_promotion(conn, promotion_id, deployment_id, now)
 
     def list_audit(self, deployment_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:

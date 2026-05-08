@@ -18,14 +18,296 @@ from poly_alpha_store import (
     ensure_poly_alpha_schema,
     list_opportunities,
     list_poly_alpha_audit_events,
+    record_config_version,
+    record_document,
+    record_event,
+    record_event_market_link,
+    record_market_snapshot,
     record_opportunity,
     record_research_run,
     record_shadow_signal,
+    record_source_set,
+    record_strategy_version,
     record_validation_result,
 )
 from polymarket_store import ensure_polymarket_schema, record_audit_event
 
 POLY_NOW = "2026-05-07T00:00:00Z"
+
+POLY_ALPHA_LIST_ROUTES = [
+    "/api/poly-alpha/config-versions",
+    "/api/poly-alpha/source-sets",
+    "/api/poly-alpha/strategy-versions",
+    "/api/poly-alpha/documents",
+    "/api/poly-alpha/events",
+    "/api/poly-alpha/links",
+    "/api/poly-alpha/research-runs",
+    "/api/poly-alpha/findings",
+    "/api/poly-alpha/scan-runs",
+    "/api/poly-alpha/scan-results",
+    "/api/poly-alpha/opportunities",
+    "/api/poly-alpha/evidence-packs",
+    "/api/poly-alpha/exploration-decisions",
+    "/api/poly-alpha/market-snapshots",
+    "/api/poly-alpha/shadow-signals",
+    "/api/poly-alpha/validations",
+    "/api/poly-alpha/promotions",
+]
+
+
+def seed_poly_alpha_versions(conn):
+    record_config_version(
+        conn,
+        config_version_id="cfg-v1",
+        name="phase-1",
+        validation_freshness_window_sec=300,
+        min_exploration_samples=10,
+        min_promotion_samples=30,
+        min_promotion_history_days=90,
+        max_drawdown_threshold=-0.2,
+        min_hit_rate=0.52,
+        min_payoff_ratio=1.1,
+        min_capacity_multiple=2.0,
+        promotion_defaults={},
+        created_at=POLY_NOW,
+    )
+    record_source_set(
+        conn,
+        source_set_version="sources-v1",
+        name="phase-1-sources",
+        enabled_sources=["official_rss"],
+        trust_policy={"official": "required"},
+        created_at=POLY_NOW,
+    )
+    record_strategy_version(
+        conn,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        strategy_name="probability-lag",
+        version="1",
+        config_version_id="cfg-v1",
+        prompt_version="prompt-v1",
+        source_set_version="sources-v1",
+        description="phase 1",
+        created_at=POLY_NOW,
+    )
+
+
+def poly_alpha_document(document_id="doc-1", market_id="market-1"):
+    return {
+        "document_id": document_id,
+        "source_type": "rss",
+        "source_name": "Official feed",
+        "url": "https://example.invalid/feed",
+        "api_endpoint": "",
+        "market_id": "",
+        "venue": "polymarket",
+        "venue_market_id": market_id,
+        "venue_contract_id": f"contract-{market_id}",
+        "outcome_id": "yes",
+        "asset_symbol": "BTC",
+        "topic": "crypto",
+        "published_at": "2026-05-07T11:30:00Z",
+        "fetched_at": "2026-05-07T11:45:00Z",
+        "observed_at": "2026-05-07T11:46:00Z",
+        "payload_hash": f"hash-{document_id}",
+        "title": f"Document {document_id}",
+        "normalized_text": "normalized evidence",
+        "raw_payload": {"id": document_id},
+        "trust_level": "official",
+    }
+
+
+def poly_alpha_snapshot(snapshot_id="snap-1", market_id="market-1", observed_at="2026-05-07T11:59:30Z"):
+    return {
+        "snapshot_id": snapshot_id,
+        "venue": "polymarket",
+        "venue_market_id": market_id,
+        "venue_contract_id": f"contract-{market_id}",
+        "outcome_id": "yes",
+        "adapter_metadata": {"asset_id": "asset-1"},
+        "source_api": "clob",
+        "observed_at": observed_at,
+        "fetched_at": "2026-05-07T11:59:35Z",
+        "payload_hash": f"hash-{snapshot_id}",
+        "best_bid": 0.41,
+        "best_ask": 0.43,
+        "spread": 0.02,
+        "top_bid_depth": 250.0,
+        "top_ask_depth": 220.0,
+        "mid_price": 0.42,
+        "last_trade_price": 0.421,
+        "liquidity": 1200.0,
+        "volume": 5000.0,
+        "raw_payload": {"id": snapshot_id},
+        "title": f"Market {market_id}",
+        "alpha_family": "cross_market_probability",
+        "market_probability": 0.42,
+        "estimated_probability": 0.57,
+        "confidence": 0.72,
+    }
+
+
+def record_poly_alpha_document(conn, document_id="doc-1", market_id="market-1", write_audit=False):
+    return record_document(conn, created_at=POLY_NOW, write_audit=write_audit, **poly_alpha_document(document_id, market_id))
+
+
+def record_poly_alpha_snapshot(conn, snapshot_id="snap-1", market_id="market-1", observed_at="2026-05-07T11:59:30Z"):
+    snapshot = {
+        key: value
+        for key, value in poly_alpha_snapshot(snapshot_id, market_id, observed_at).items()
+        if key
+        in {
+            "snapshot_id",
+            "venue",
+            "venue_market_id",
+            "venue_contract_id",
+            "outcome_id",
+            "adapter_metadata",
+            "source_api",
+            "observed_at",
+            "fetched_at",
+            "payload_hash",
+            "best_bid",
+            "best_ask",
+            "spread",
+            "top_bid_depth",
+            "top_ask_depth",
+            "mid_price",
+            "last_trade_price",
+            "liquidity",
+            "volume",
+            "raw_payload",
+        }
+    }
+    return record_market_snapshot(conn, created_at=POLY_NOW, **snapshot)
+
+
+def seed_poly_alpha_opportunity(conn, suffix="control", market_id="market-1", status="watch"):
+    return record_opportunity(
+        conn,
+        opportunity_id=f"opp-{suffix}",
+        strategy_version_id="strat-v1",
+        venue="polymarket",
+        venue_market_id=market_id,
+        venue_contract_id=f"contract-{market_id}",
+        outcome_id="yes",
+        title=f"Opportunity {suffix}",
+        alpha_family="cross_market_probability",
+        status=status,
+        primary_reason="",
+        market_probability=0.42,
+        estimated_probability=0.57,
+        edge=0.15,
+        confidence=0.72,
+        created_at=POLY_NOW,
+        updated_at=POLY_NOW,
+    )
+
+
+def seed_poly_alpha_evidence(conn, suffix="control", market_id="market-1"):
+    opportunity_id = seed_poly_alpha_opportunity(conn, suffix=suffix, market_id=market_id)
+    document_id = record_poly_alpha_document(conn, document_id=f"doc-{suffix}", market_id=market_id)
+    snapshot_id = record_poly_alpha_snapshot(conn, snapshot_id=f"snap-{suffix}", market_id=market_id)
+    event_id = record_event(
+        conn,
+        event_id=f"event-{suffix}",
+        event_type="crypto_price",
+        title="BTC breaks level",
+        summary="BTC moved quickly",
+        primary_assets=["BTC"],
+        event_time="2026-05-07T11:40:00Z",
+        status="open",
+        created_at=POLY_NOW,
+        updated_at=POLY_NOW,
+    )
+    record_event_market_link(
+        conn,
+        event_id=event_id,
+        venue="polymarket",
+        venue_market_id=market_id,
+        venue_contract_id=f"contract-{market_id}",
+        outcome_id="yes",
+        adapter_metadata={},
+        outcome="yes",
+        link_reason="same underlying event",
+        link_confidence=0.82,
+        created_at=POLY_NOW,
+    )
+    return opportunity_id, document_id, snapshot_id, event_id
+
+
+def seed_poly_alpha_shadow(conn, suffix="control", with_validation=False):
+    opportunity_id = seed_poly_alpha_opportunity(conn, suffix=suffix, market_id=f"market-{suffix}", status="watch")
+    run_id = record_research_run(
+        conn,
+        run_id=f"run-{suffix}",
+        trigger_type="manual_task",
+        opportunity_id=opportunity_id,
+        evidence_pack_id="",
+        strategy_version_id="strat-v1",
+        event_id="",
+        venue="polymarket",
+        venue_market_id=f"market-{suffix}",
+        requested_by="user",
+        started_at=POLY_NOW,
+        completed_at=POLY_NOW,
+        status="completed",
+        model_config={},
+        created_at=POLY_NOW,
+    )
+    shadow_signal_id = record_shadow_signal(
+        conn,
+        shadow_signal_id=f"shadow-{suffix}",
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        strategy_version_id="strat-v1",
+        strategy_family="cross_market_probability",
+        venue="polymarket",
+        venue_market_id=f"market-{suffix}",
+        venue_contract_id=f"contract-market-{suffix}",
+        outcome_id="yes",
+        adapter_metadata={"asset_id": "asset-1"},
+        side="buy",
+        observed_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        status="shadow",
+        created_at=POLY_NOW,
+        expires_at="2099-05-07T00:00:00Z",
+    )
+    if with_validation:
+        record_validation_result(
+            conn,
+            opportunity_id=opportunity_id,
+            shadow_signal_id=shadow_signal_id,
+            strategy_version_id="strat-v1",
+            entry_snapshot_id="snap-entry",
+            exit_snapshot_id="snap-exit",
+            validation_type="fixed_horizon",
+            entry_price=0.42,
+            exit_price=0.48,
+            holding_period="1h",
+            gross_return=0.14,
+            cost_adjusted_return=0.12,
+            closing_line_value=0.05,
+            brier_score=0.21,
+            calibration_error=0.02,
+            edge_decay=0.01,
+            information_lag_sec=30,
+            fetch_lag_sec=5,
+            market_move_before_signal=0.01,
+            market_move_after_signal=0.06,
+            max_adverse_excursion=-0.02,
+            max_favorable_excursion=0.08,
+            liquidity_assumption="top_of_book",
+            slippage_assumption="one_tick",
+            pass_fail="pass",
+            failure_reason="",
+            created_at=POLY_NOW,
+        )
+    return opportunity_id, shadow_signal_id
 
 
 def insert_proposal(
@@ -343,6 +625,216 @@ def test_audit_route_returns_events(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["events"][0]["action"] == "start"
+
+
+@pytest.mark.parametrize("route", POLY_ALPHA_LIST_ROUTES)
+def test_poly_alpha_list_routes_return_items_and_ensure_schema(tmp_path, route):
+    db_path = tmp_path / "bot.db"
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    response = client.get(route)
+
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+
+    conn = sqlite3.connect(db_path)
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'poly_alpha_config_versions'"
+    ).fetchone()
+    conn.close()
+    assert table_exists is not None
+
+
+def test_poly_alpha_manual_research_route_records_run_and_audit(tmp_path):
+    db_path = tmp_path / "bot.db"
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    response = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": "opp-manual",
+            "evidence_pack_id": "pack-manual",
+            "strategy_version_id": "strat-v1",
+            "event_id": "event-manual",
+            "venue": "polymarket",
+            "venue_market_id": "market-manual",
+            "requested_by": "analyst",
+            "config": {"model": "paper-research"},
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["accepted"] is True
+    assert body["action"] == "research_started"
+    assert body["ids"]["run_id"]
+
+    runs = client.get("/api/poly-alpha/research-runs").json()["items"]
+    audit = client.get("/api/poly-alpha/audit").json()["items"]
+    assert runs[0]["run_id"] == body["ids"]["run_id"]
+    assert runs[0]["trigger_type"] == "manual_task"
+    assert runs[0]["status"] == "running"
+    assert [event["action"] for event in audit] == ["research_started"]
+
+
+def test_poly_alpha_control_routes_run_paper_only_workflow(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_polymarket_schema(conn)
+    ensure_poly_alpha_schema(conn)
+    seed_poly_alpha_versions(conn)
+    evidence_opportunity_id, document_id, snapshot_id, event_id = seed_poly_alpha_evidence(conn, suffix="evidence")
+    _, validation_shadow_id = seed_poly_alpha_shadow(conn, suffix="validation")
+    record_poly_alpha_snapshot(
+        conn,
+        snapshot_id="snap-validation-entry",
+        market_id="market-validation",
+        observed_at="2026-05-06T23:59:00Z",
+    )
+    _, promotion_shadow_id = seed_poly_alpha_shadow(conn, suffix="promotion", with_validation=True)
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    scan_response = client.post(
+        "/api/poly-alpha/scan-runs/deterministic",
+        json={
+            "strategy_version_id": "strat-v1",
+            "config": {"min_edge": 0.01},
+            "source_documents": [poly_alpha_document("doc-scan", "market-scan")],
+            "market_snapshots": [poly_alpha_snapshot("snap-scan", "market-scan")],
+        },
+    )
+    evidence_response = client.post(
+        "/api/poly-alpha/evidence-packs/build",
+        json={
+            "opportunity_id": evidence_opportunity_id,
+            "document_ids": [document_id],
+            "snapshot_ids": [snapshot_id],
+            "event_ids": [event_id],
+        },
+    )
+    exploration_response = client.post(
+        "/api/poly-alpha/exploration-decisions/decide",
+        json={
+            "opportunity_id": evidence_opportunity_id,
+            "evidence_pack_id": evidence_response.json()["ids"]["evidence_pack_id"],
+            "config": {"historical_sample_count": 10, "exploration_snapshot_freshness_sec": 604800},
+        },
+    )
+    validation_response = client.post(
+        "/api/poly-alpha/validations/run",
+        json={
+            "shadow_signal_id": validation_shadow_id,
+            "config": {"validation_freshness_window_sec": 300},
+        },
+    )
+    promotion_response = client.post(
+        "/api/poly-alpha/promotions/evaluate",
+        json={"shadow_signal_id": promotion_shadow_id, "config": passing_promotion_config()},
+    )
+    proposal_response = client.post(
+        "/api/poly-alpha/paper-proposals/create",
+        json={
+            "promotion_id": promotion_response.json()["ids"]["promotion_id"],
+            "deployment_id": "dep-1",
+        },
+    )
+
+    assert scan_response.status_code == 202
+    assert evidence_response.status_code == 202
+    assert exploration_response.status_code == 202
+    assert validation_response.status_code == 202
+    assert promotion_response.status_code == 202
+    assert proposal_response.status_code == 202
+    assert scan_response.json()["ids"]["scan_run_id"]
+    assert evidence_response.json()["ids"]["evidence_pack_id"]
+    assert exploration_response.json()["ids"]["exploration_id"]
+    assert validation_response.json()["ids"]["validation_ids"]
+    assert promotion_response.json()["ids"]["promotion_id"]
+    assert proposal_response.json()["ids"]["proposal_id"]
+
+    assert client.get("/api/poly-alpha/scan-runs").json()["items"][0]["status"] == "completed"
+    assert client.get("/api/poly-alpha/evidence-packs").json()["items"][0]["opportunity_id"] == evidence_opportunity_id
+    assert client.get("/api/poly-alpha/exploration-decisions").json()["items"][0]["decision"] == "pass"
+    assert client.get("/api/poly-alpha/validations").json()["items"]
+    assert client.get("/api/poly-alpha/promotions").json()["items"][0]["decision"] == "promote"
+    proposal = client.get("/api/proposals?deployment_id=dep-1").json()["proposals"][0]
+    assert proposal["proposal_id"] == proposal_response.json()["ids"]["proposal_id"]
+    assert proposal["features"]["paper_only"] is True
+
+
+def test_poly_alpha_control_routes_reject_live_order_fields(tmp_path):
+    db_path = tmp_path / "bot.db"
+    client = TestClient(create_app(db_path=str(db_path)))
+
+    unknown_live_field = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": "opp-manual",
+            "evidence_pack_id": "pack-manual",
+            "strategy_version_id": "strat-v1",
+            "live_order": {"side": "buy"},
+        },
+    )
+    nested_live_field = client.post(
+        "/api/poly-alpha/scan-runs/deterministic",
+        json={
+            "strategy_version_id": "strat-v1",
+            "config": {"nested": {"private_key": "not-accepted"}},
+            "source_documents": [],
+            "market_snapshots": [],
+        },
+    )
+
+    assert unknown_live_field.status_code == 422
+    assert nested_live_field.status_code == 422
+
+
+def test_poly_alpha_audit_route_returns_unified_audit_actions(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_poly_alpha_schema(conn)
+    actions = [
+        "document_ingested",
+        "evidence_pack_created",
+        "research_started",
+        "research_completed",
+        "validation_completed",
+        "promotion_approved",
+        "promotion_rejected",
+        "promotion_watch",
+        "paper_fill_skipped",
+    ]
+    for index, action in enumerate(actions):
+        conn.execute(
+            """
+            INSERT INTO poly_alpha_audit_events
+                (audit_id, action, entity_type, entity_id, actor_type, before_json,
+                 after_json, result, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"audit-{index}",
+                action,
+                "poly_alpha",
+                f"entity-{index}",
+                "system",
+                "{}",
+                "{}",
+                "success",
+                f"2026-05-07T00:00:{index:02d}Z",
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)))
+    response = client.get("/api/poly-alpha/audit")
+
+    assert response.status_code == 200
+    assert [event["action"] for event in response.json()["items"]] == actions
 
 
 def test_proposals_route_returns_deployment_proposals(tmp_path):

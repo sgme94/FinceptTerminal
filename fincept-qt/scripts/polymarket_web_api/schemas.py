@@ -2,7 +2,63 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+SENSITIVE_KEY_TOKENS = (
+    "private_key",
+    "api_secret",
+    "api_key",
+    "api_token",
+    "secret",
+    "clob",
+    "live_trading",
+    "live_order",
+    "order_endpoint",
+    "order_client",
+)
+SENSITIVE_VALUE_TOKENS = (
+    "private_key",
+    "api_secret",
+    "api_key",
+    "api_token",
+    "secret",
+    "live_trading",
+    "live_order",
+    "order_endpoint",
+    "order_client",
+    "clob_order",
+)
+
+
+def _contains_token(value: str, tokens: tuple[str, ...]) -> bool:
+    normalized = value.lower()
+    return any(token in normalized for token in tokens)
+
+
+def reject_sensitive_tree(value: Any) -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if isinstance(key, str) and _contains_token(key, SENSITIVE_KEY_TOKENS):
+                raise ValueError("MVP paper-only API rejects live trading fields")
+            reject_sensitive_tree(nested)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            reject_sensitive_tree(nested)
+        return
+    if isinstance(value, str) and _contains_token(value, SENSITIVE_VALUE_TOKENS):
+        raise ValueError("MVP paper-only API rejects live trading fields")
+
+
+class StrictPolyAlphaControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_live_trading_payload(cls, data: Any) -> Any:
+        reject_sensitive_tree(data)
+        return data
 
 
 class BotStatus(BaseModel):
@@ -153,3 +209,60 @@ class ControlActionResponse(BaseModel):
     deployment_id: str
     event_id: str
     status: str
+
+
+class PolyAlphaListResponse(BaseModel):
+    items: list[dict[str, Any]]
+
+
+class PolyAlphaControlResponse(BaseModel):
+    accepted: bool
+    action: str
+    ids: dict[str, Any] = Field(default_factory=dict)
+    status: str
+
+
+class PolyAlphaManualResearchRequest(StrictPolyAlphaControlRequest):
+    opportunity_id: str
+    evidence_pack_id: str = ""
+    strategy_version_id: str
+    event_id: str = ""
+    venue: str = "polymarket"
+    venue_market_id: str = ""
+    requested_by: str = "local-user"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolyAlphaDeterministicScanRequest(StrictPolyAlphaControlRequest):
+    strategy_version_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    source_documents: list[dict[str, Any]] = Field(default_factory=list)
+    market_snapshots: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PolyAlphaEvidencePackRequest(StrictPolyAlphaControlRequest):
+    opportunity_id: str
+    document_ids: list[str] = Field(default_factory=list)
+    snapshot_ids: list[str] = Field(default_factory=list)
+    event_ids: list[str] = Field(default_factory=list)
+
+
+class PolyAlphaExplorationDecisionRequest(StrictPolyAlphaControlRequest):
+    opportunity_id: str
+    evidence_pack_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolyAlphaValidationRequest(StrictPolyAlphaControlRequest):
+    shadow_signal_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolyAlphaPromotionRequest(StrictPolyAlphaControlRequest):
+    shadow_signal_id: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolyAlphaPaperProposalRequest(StrictPolyAlphaControlRequest):
+    promotion_id: str
+    deployment_id: str
