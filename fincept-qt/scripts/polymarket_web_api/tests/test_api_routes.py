@@ -126,7 +126,7 @@ def poly_alpha_snapshot(snapshot_id="snap-1", market_id="market-1", observed_at=
         "venue_contract_id": f"contract-{market_id}",
         "outcome_id": "yes",
         "adapter_metadata": {"asset_id": "asset-1"},
-        "source_api": "clob",
+        "source_api": "public_market_data",
         "observed_at": observed_at,
         "fetched_at": "2026-05-07T11:59:35Z",
         "payload_hash": f"hash-{snapshot_id}",
@@ -787,9 +787,19 @@ def test_poly_alpha_control_routes_reject_live_order_fields(tmp_path):
             "market_snapshots": [],
         },
     )
+    nested_clob_value = client.post(
+        "/api/poly-alpha/research-runs/manual",
+        json={
+            "opportunity_id": "opp-manual",
+            "evidence_pack_id": "pack-manual",
+            "strategy_version_id": "strat-v1",
+            "config": {"routing": {"source": "clob"}},
+        },
+    )
 
     assert unknown_live_field.status_code == 422
     assert nested_live_field.status_code == 422
+    assert nested_clob_value.status_code == 422
 
 
 def test_poly_alpha_audit_route_returns_unified_audit_actions(tmp_path):

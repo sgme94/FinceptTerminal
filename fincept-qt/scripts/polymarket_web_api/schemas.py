@@ -27,6 +27,7 @@ SENSITIVE_VALUE_TOKENS = (
     "live_order",
     "order_endpoint",
     "order_client",
+    "clob",
     "clob_order",
 )
 
