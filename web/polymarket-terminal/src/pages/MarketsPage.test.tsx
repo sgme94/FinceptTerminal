@@ -145,6 +145,49 @@ describe("MarketsPage", () => {
     expect(within(polyAlphaTable).queryByText("$999,999")).not.toBeInTheDocument();
   });
 
+  it("does not match Poly Alpha rows when contract and outcome identity fields are blank", async () => {
+    const client = await import("../api/client");
+    vi.mocked(client.fetchPolyAlphaOpportunities).mockResolvedValue([
+      {
+        ...mockPolyAlphaOpportunities[0],
+        id: "poly-opp-missing-identity",
+        venueMarketId: "mkt-missing-identity",
+        venueContractId: "",
+        outcomeId: ""
+      }
+    ]);
+    vi.mocked(client.fetchPolyAlphaLinks).mockResolvedValue([
+      {
+        ...mockPolyAlphaLinks[0],
+        id: "poly-link-missing-identity",
+        eventId: "poly-event-missing-identity",
+        venueMarketId: "mkt-missing-identity",
+        venueContractId: "",
+        outcomeId: "",
+        linkConfidence: 0.88
+      }
+    ]);
+    vi.mocked(client.fetchPolyAlphaMarketSnapshots).mockResolvedValue([
+      {
+        ...mockPolyAlphaMarketSnapshots[0],
+        id: "poly-snapshot-missing-identity",
+        venueMarketId: "mkt-missing-identity",
+        venueContractId: "",
+        outcomeId: "",
+        liquidity: 777777,
+        fetchedAt: "2026-05-06T11:11:00.000Z"
+      }
+    ]);
+
+    render(<MarketsPage />);
+
+    const polyAlphaTable = await screen.findByRole("table", { name: "Poly Alpha market links" });
+    expect(within(polyAlphaTable).getByText("0 linked event")).toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("88%")).not.toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("$777,777")).not.toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("2026-05-06T11:11:00.000Z")).not.toBeInTheDocument();
+  });
+
   it("queues only the selected opportunity when multiple outcomes share a market", async () => {
     const user = userEvent.setup();
     const client = await import("../api/client");

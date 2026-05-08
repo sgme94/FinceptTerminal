@@ -104,7 +104,16 @@ function matchesPolyAlphaMarketIdentity(
   opportunity: PolyAlphaOpportunity,
   candidate: Pick<PolyAlphaEventMarketLink | PolyAlphaMarketSnapshot, "venueMarketId" | "venueContractId" | "outcomeId">
 ) {
+  const opportunityIdentity = [
+    opportunity.venueMarketId,
+    opportunity.venueContractId,
+    opportunity.outcomeId
+  ];
+  const candidateIdentity = [candidate.venueMarketId, candidate.venueContractId, candidate.outcomeId];
+
   return (
+    opportunityIdentity.every((value) => value !== "") &&
+    candidateIdentity.every((value) => value !== "") &&
     candidate.venueMarketId === opportunity.venueMarketId &&
     candidate.venueContractId === opportunity.venueContractId &&
     candidate.outcomeId === opportunity.outcomeId
