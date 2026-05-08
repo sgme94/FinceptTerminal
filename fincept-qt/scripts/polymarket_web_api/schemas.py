@@ -30,6 +30,19 @@ SENSITIVE_VALUE_TOKENS = (
     "clob",
     "clob_order",
 )
+CLOB_ORDER_KEY_NAMES = {
+    "tokenid",
+    "makeramount",
+    "takeramount",
+    "signature",
+    "signaturetype",
+    "nonce",
+    "expiration",
+    "feeratebps",
+    "signer",
+    "maker",
+    "taker",
+}
 
 
 def _contains_token(value: str, tokens: tuple[str, ...]) -> bool:
@@ -37,10 +50,16 @@ def _contains_token(value: str, tokens: tuple[str, ...]) -> bool:
     return any(token in normalized for token in tokens)
 
 
+def _is_clob_order_key(value: str) -> bool:
+    return value.replace("_", "").lower() in CLOB_ORDER_KEY_NAMES
+
+
 def reject_sensitive_tree(value: Any) -> None:
     if isinstance(value, dict):
         for key, nested in value.items():
-            if isinstance(key, str) and _contains_token(key, SENSITIVE_KEY_TOKENS):
+            if isinstance(key, str) and (
+                _contains_token(key, SENSITIVE_KEY_TOKENS) or _is_clob_order_key(key)
+            ):
                 raise ValueError("MVP paper-only API rejects live trading fields")
             reject_sensitive_tree(nested)
         return

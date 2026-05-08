@@ -58,13 +58,15 @@ def create_app(*, db_path: str | None = None) -> FastAPI:
     def poly_alpha_list(resource: str) -> PolyAlphaListResponse:
         return PolyAlphaListResponse(items=repo.list_poly_alpha(resource))
 
+    def add_poly_alpha_list_route(resource: str) -> None:
+        @app.get(f"/api/poly-alpha/{resource}", response_model=PolyAlphaListResponse)
+        def get_poly_alpha_resource() -> PolyAlphaListResponse:
+            return poly_alpha_list(resource)
+
     for poly_alpha_resource in POLY_ALPHA_LISTERS:
         if poly_alpha_resource == "audit":
             continue
-
-        @app.get(f"/api/poly-alpha/{poly_alpha_resource}", response_model=PolyAlphaListResponse)
-        def get_poly_alpha_resource(resource: str = poly_alpha_resource) -> PolyAlphaListResponse:
-            return poly_alpha_list(resource)
+        add_poly_alpha_list_route(poly_alpha_resource)
 
     @app.get("/api/poly-alpha/audit", response_model=PolyAlphaListResponse)
     def get_poly_alpha_audit() -> PolyAlphaListResponse:

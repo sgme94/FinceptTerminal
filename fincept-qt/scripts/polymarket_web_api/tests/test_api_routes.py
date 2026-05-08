@@ -645,6 +645,45 @@ def test_poly_alpha_list_routes_return_items_and_ensure_schema(tmp_path, route):
     assert table_exists is not None
 
 
+def test_poly_alpha_list_route_ignores_resource_query_parameter(tmp_path):
+    db_path = tmp_path / "bot.db"
+    conn = sqlite3.connect(db_path)
+    ensure_poly_alpha_schema(conn)
+    seed_poly_alpha_versions(conn)
+    conn.execute(
+        """
+        INSERT INTO poly_alpha_audit_events
+            (audit_id, action, entity_type, entity_id, actor_type, before_json,
+             after_json, result, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "audit-resource-query",
+            "research_started",
+            "research_run",
+            "run-resource-query",
+            "system",
+            "{}",
+            "{}",
+            "success",
+            POLY_NOW,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    client = TestClient(create_app(db_path=str(db_path)), raise_server_exceptions=False)
+
+    audit_override = client.get("/api/poly-alpha/config-versions?resource=audit")
+    unknown_override = client.get("/api/poly-alpha/config-versions?resource=unknown")
+
+    assert audit_override.status_code == 200
+    assert unknown_override.status_code == 200
+    assert audit_override.json()["items"][0]["config_version_id"] == "cfg-v1"
+    assert unknown_override.json()["items"][0]["config_version_id"] == "cfg-v1"
+    assert "action" not in audit_override.json()["items"][0]
+
+
 def test_poly_alpha_manual_research_route_records_run_and_audit(tmp_path):
     db_path = tmp_path / "bot.db"
     client = TestClient(create_app(db_path=str(db_path)))
@@ -796,10 +835,36 @@ def test_poly_alpha_control_routes_reject_live_order_fields(tmp_path):
             "config": {"routing": {"source": "clob"}},
         },
     )
+    clob_order_shape = client.post(
+        "/api/poly-alpha/promotions/evaluate",
+        json={
+            "shadow_signal_id": "shadow-unsafe",
+            "config": {
+                "order": {
+                    "tokenId": "123",
+                    "makerAmount": "100",
+                    "takerAmount": "42",
+                    "side": "BUY",
+                    "signature": "0xsig",
+                }
+            },
+        },
+    )
+    nested_order_fields_in_list = client.post(
+        "/api/poly-alpha/scan-runs/deterministic",
+        json={
+            "strategy_version_id": "strat-v1",
+            "config": {},
+            "source_documents": [],
+            "market_snapshots": [{"venue": "polymarket", "makerAmount": "100", "signature": "0xsig"}],
+        },
+    )
 
     assert unknown_live_field.status_code == 422
     assert nested_live_field.status_code == 422
     assert nested_clob_value.status_code == 422
+    assert clob_order_shape.status_code == 422
+    assert nested_order_fields_in_list.status_code == 422
 
 
 def test_poly_alpha_audit_route_returns_unified_audit_actions(tmp_path):
