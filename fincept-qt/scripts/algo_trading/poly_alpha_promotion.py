@@ -260,7 +260,8 @@ def record_proposal_decision(
     decided_by: str,
     decided_at: str,
     decision_reason: str,
-) -> bool:
+    request_id: str = "",
+) -> str | bool:
     if status not in {"approved", "rejected"}:
         raise ValueError("Proposal decision must be approved or rejected")
     bridge = _proposal_bridge(conn, proposal_id)
@@ -291,7 +292,7 @@ def record_proposal_decision(
         )
         if not updated:
             raise ValueError(f"{lifecycle_event} opportunity lineage update failed")
-        record_audit_event(
+        event_id = record_audit_event(
             conn,
             bridge["deployment_id"],
             bridge["strategy_id"],
@@ -304,7 +305,7 @@ def record_proposal_decision(
             {"status": status},
             "success",
             decision_reason,
-            "",
+            request_id,
             decided_at,
         )
     except Exception:
@@ -312,7 +313,7 @@ def record_proposal_decision(
         conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
         raise
     conn.execute("RELEASE SAVEPOINT poly_alpha_promotion_bridge")
-    return True
+    return event_id
 
 
 def record_post_approval_skip(
@@ -325,7 +326,7 @@ def record_post_approval_skip(
     bridge = _proposal_bridge(conn, proposal_id)
     if bridge["status"] != "approved":
         return False
-    if bridge["features"].get("opportunity_id") != opportunity_id:
+    if bridge["opportunity_id"] != opportunity_id:
         return False
     conn.execute("SAVEPOINT poly_alpha_promotion_bridge")
     try:
@@ -369,7 +370,7 @@ def record_paper_fill_recorded(
     now: str,
 ) -> bool:
     bridge = _proposal_bridge(conn, proposal_id)
-    if bridge["features"].get("opportunity_id") != opportunity_id:
+    if bridge["opportunity_id"] != opportunity_id:
         return False
     opportunity = _one(
         [
@@ -554,10 +555,41 @@ def _proposal_bridge(conn: sqlite3.Connection, proposal_id: str) -> dict:
         raise ValueError("Proposal is not a Poly Alpha paper proposal")
     if not features.get("opportunity_id"):
         raise ValueError("Poly Alpha paper proposal is missing opportunity_id")
+    promotion_id = features.get("promotion_id")
+    if not promotion_id:
+        raise ValueError("Poly Alpha proposal promotion lineage is missing")
+    promotion = conn.execute(
+        """
+        SELECT opportunity_id, shadow_signal_id, strategy_version_id, decision, proposal_id
+        FROM poly_alpha_promotion_decisions
+        WHERE promotion_id = ?
+        """,
+        (promotion_id,),
+    ).fetchone()
+    if promotion is None:
+        raise ValueError("Poly Alpha proposal promotion lineage is missing")
+    promotion_lineage = {
+        "opportunity_id": promotion[0],
+        "shadow_signal_id": promotion[1],
+        "strategy_version_id": promotion[2],
+        "decision": promotion[3],
+        "proposal_id": promotion[4],
+    }
+    if (
+        promotion_lineage["decision"] != "promote"
+        or promotion_lineage["proposal_id"] != proposal_id
+        or promotion_lineage["opportunity_id"] != features.get("opportunity_id")
+        or promotion_lineage["shadow_signal_id"] != features.get("shadow_signal_id")
+        or promotion_lineage["strategy_version_id"] != features.get("strategy_version_id")
+        or promotion_lineage["strategy_version_id"] != row[1]
+    ):
+        raise ValueError("Poly Alpha proposal promotion lineage mismatch")
     return {
         "deployment_id": row[0],
-        "strategy_id": row[1],
-        "opportunity_id": features["opportunity_id"],
+        "strategy_id": promotion_lineage["strategy_version_id"],
+        "opportunity_id": promotion_lineage["opportunity_id"],
+        "promotion_id": promotion_id,
+        "shadow_signal_id": promotion_lineage["shadow_signal_id"],
         "features": features,
         "status": row[3],
     }

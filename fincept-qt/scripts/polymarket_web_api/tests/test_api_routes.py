@@ -571,6 +571,11 @@ def test_poly_alpha_proposal_decision_route_updates_lineage_and_poly_audit(
     assert opportunity["status"] == expected_opportunity_status
     assert expected_audit_action in poly_actions
 
+    audit = client.get("/api/audit?deployment_id=dep-1").json()["events"][-1]
+    assert audit["action"] == expected_audit_action
+    assert audit["request_id"] == f"req-poly-{route_action}"
+    assert response.json()["event_id"] == audit["event_id"]
+
 
 def test_repository_approve_does_not_overwrite_state_changed_after_read(tmp_path, monkeypatch):
     db_path = tmp_path / "bot.db"

@@ -325,15 +325,37 @@ class PolymarketRepository:
                 conn.commit()
                 raise ProposalExpiredError(proposal_id)
             if is_poly_alpha_paper_proposal(before):
-                updated = record_poly_alpha_proposal_decision(
-                    conn,
-                    proposal_id,
-                    status,
-                    actor_id,
-                    now,
-                    reason,
-                )
-                if not updated:
+                try:
+                    event_id = record_poly_alpha_proposal_decision(
+                        conn,
+                        proposal_id,
+                        status,
+                        actor_id,
+                        now,
+                        reason,
+                        request_id=request_id,
+                    )
+                except ValueError as exc:
+                    current = find_proposal(conn, deployment_id, proposal_id) or dict(before)
+                    record_audit_event(
+                        conn,
+                        deployment_id=deployment_id,
+                        strategy_id=strategy_id,
+                        actor_type="user",
+                        actor_id=actor_id,
+                        action=action,
+                        entity_type="proposal",
+                        entity_id=proposal_id,
+                        before=before,
+                        after=current,
+                        result="failed",
+                        reason="invalid_poly_alpha_lineage",
+                        request_id=request_id,
+                        now=now,
+                    )
+                    conn.commit()
+                    raise InvalidProposalStateError(proposal_id) from exc
+                if not event_id:
                     current = find_proposal(conn, deployment_id, proposal_id) or dict(before)
                     record_audit_event(
                         conn,
@@ -353,8 +375,7 @@ class PolymarketRepository:
                     )
                     conn.commit()
                     raise InvalidProposalStateError(proposal_id)
-                events = list_audit_events(conn, deployment_id)
-                return events[-1]["event_id"] if events else ""
+                return event_id
             updated = update_trade_proposal_status(
                 conn,
                 proposal_id,

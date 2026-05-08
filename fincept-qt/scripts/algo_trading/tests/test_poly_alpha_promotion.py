@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -182,6 +183,41 @@ def _seed_wrong_opportunity(conn: sqlite3.Connection) -> None:
         confidence=0.7,
         created_at=NOW,
         updated_at=NOW,
+    )
+
+
+def _replace_proposal_features(conn: sqlite3.Connection, proposal_id: str, features: dict) -> None:
+    conn.execute(
+        """
+        UPDATE algo_polymarket_trade_proposals
+        SET features_json = ?
+        WHERE proposal_id = ?
+        """,
+        (json.dumps(features), proposal_id),
+    )
+
+
+def _record_poly_alpha_marked_proposal(conn: sqlite3.Connection, features: dict) -> str:
+    signal = SignalDecision(
+        asset_id="asset-1",
+        action="buy",
+        entry_price=0.42,
+        estimated_probability=0.55,
+        edge=0.13,
+        confidence=0.7,
+        reason="forged marker",
+        features=features,
+    )
+    return record_trade_proposal(
+        conn,
+        "dep-1",
+        features.get("strategy_version_id", "strat-v1"),
+        "market-1",
+        "condition-1",
+        signal,
+        25.0,
+        NOW,
+        "2026-05-08T00:00:00Z",
     )
 
 
@@ -820,6 +856,119 @@ def test_poly_alpha_proposal_bridge_rejects_missing_opportunity_id_as_value_erro
 
     with pytest.raises(ValueError, match="opportunity_id"):
         record_post_approval_skip(conn, "opp-promo", proposal_id, "approval_latency_risk", NOW)
+
+
+def test_poly_alpha_proposal_bridge_rejects_forged_marker_without_promotion_row():
+    conn = _conn()
+    opportunity_id, _shadow_signal_id = _seed_validated_shadow(conn)
+    conn.execute(
+        """
+        UPDATE poly_alpha_opportunities
+        SET status = 'proposed'
+        WHERE opportunity_id = ?
+        """,
+        (opportunity_id,),
+    )
+    proposal_id = _record_poly_alpha_marked_proposal(
+        conn,
+        {
+            "source": "poly_alpha",
+            "paper_only": True,
+            "promotion_id": "promotion-missing",
+            "opportunity_id": opportunity_id,
+            "shadow_signal_id": "shadow-promo",
+            "strategy_version_id": "strat-v1",
+        },
+    )
+
+    with pytest.raises(ValueError, match="promotion lineage"):
+        record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert proposal["status"] == "proposed"
+    assert list_opportunities(conn)[0]["status"] == "proposed"
+    assert "proposal_approved" not in [row["action"] for row in list_poly_alpha_audit_events(conn)]
+
+
+@pytest.mark.parametrize(
+    "lineage_break",
+    [
+        "promotion_id",
+        "promotion_proposal_id",
+        "promotion_decision",
+        "feature_opportunity_id",
+        "feature_shadow_signal_id",
+        "feature_strategy_version_id",
+        "proposal_strategy_id",
+    ],
+)
+def test_poly_alpha_proposal_bridge_rejects_mismatched_promotion_lineage(lineage_break):
+    conn = _conn()
+    _seed_validated_shadow(conn)
+    promotion_id = evaluate_promotion(conn, "shadow-promo", _passing_config(), NOW)
+    proposal_id = create_paper_proposal_from_promotion(conn, promotion_id, "dep-1", NOW)
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    features = dict(proposal["features"])
+    expected_statuses = {"opp-promo": "proposed"}
+
+    if lineage_break == "promotion_id":
+        features["promotion_id"] = "promotion-missing"
+        _replace_proposal_features(conn, proposal_id, features)
+    elif lineage_break == "promotion_proposal_id":
+        conn.execute(
+            """
+            UPDATE poly_alpha_promotion_decisions
+            SET proposal_id = 'other-proposal'
+            WHERE promotion_id = ?
+            """,
+            (promotion_id,),
+        )
+    elif lineage_break == "promotion_decision":
+        conn.execute(
+            """
+            UPDATE poly_alpha_promotion_decisions
+            SET decision = 'reject'
+            WHERE promotion_id = ?
+            """,
+            (promotion_id,),
+        )
+    elif lineage_break == "feature_opportunity_id":
+        _seed_wrong_opportunity(conn)
+        conn.execute(
+            """
+            UPDATE poly_alpha_opportunities
+            SET status = 'proposed'
+            WHERE opportunity_id = 'opp-wrong'
+            """
+        )
+        features["opportunity_id"] = "opp-wrong"
+        _replace_proposal_features(conn, proposal_id, features)
+        expected_statuses["opp-wrong"] = "proposed"
+    elif lineage_break == "feature_shadow_signal_id":
+        features["shadow_signal_id"] = "shadow-other"
+        _replace_proposal_features(conn, proposal_id, features)
+    elif lineage_break == "feature_strategy_version_id":
+        features["strategy_version_id"] = "strat-other"
+        _replace_proposal_features(conn, proposal_id, features)
+    elif lineage_break == "proposal_strategy_id":
+        conn.execute(
+            """
+            UPDATE algo_polymarket_trade_proposals
+            SET strategy_id = 'strat-other'
+            WHERE proposal_id = ?
+            """,
+            (proposal_id,),
+        )
+
+    with pytest.raises(ValueError, match="promotion lineage"):
+        record_proposal_decision(conn, proposal_id, "approved", "user", NOW, "ok")
+
+    proposal = list_trade_proposals(conn, "dep-1")[0]
+    assert proposal["status"] == "proposed"
+    statuses = {row["opportunity_id"]: row["status"] for row in list_opportunities(conn)}
+    for opportunity_id, expected_status in expected_statuses.items():
+        assert statuses[opportunity_id] == expected_status
+    assert "proposal_approved" not in [row["action"] for row in list_poly_alpha_audit_events(conn)]
 
 
 def test_paper_fill_requires_matching_opportunity_id_without_half_success():
