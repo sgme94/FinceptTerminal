@@ -95,6 +95,15 @@ describe("MarketsPage", () => {
       },
       {
         ...mockPolyAlphaLinks[0],
+        id: "poly-link-shared-missing-outcome",
+        eventId: "poly-event-missing-outcome",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "",
+        linkConfidence: 0.97
+      },
+      {
+        ...mockPolyAlphaLinks[0],
         id: "poly-link-shared-no",
         eventId: "poly-event-no",
         venueMarketId: "mkt-shared",
@@ -103,13 +112,79 @@ describe("MarketsPage", () => {
         linkConfidence: 0.99
       }
     ]);
+    vi.mocked(client.fetchPolyAlphaMarketSnapshots).mockResolvedValue([
+      {
+        ...mockPolyAlphaMarketSnapshots[0],
+        id: "poly-snapshot-shared-missing-outcome",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "",
+        liquidity: 999999,
+        fetchedAt: "2026-05-06T10:59:00.000Z"
+      },
+      {
+        ...mockPolyAlphaMarketSnapshots[0],
+        id: "poly-snapshot-shared-yes",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "yes-token",
+        liquidity: 123,
+        fetchedAt: "2026-05-06T10:31:00.000Z"
+      }
+    ]);
 
     render(<MarketsPage />);
 
     const polyAlphaTable = await screen.findByRole("table", { name: "Poly Alpha market links" });
     expect(within(polyAlphaTable).getByText("1 linked event")).toBeInTheDocument();
     expect(within(polyAlphaTable).getByText("61%")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("$123")).toBeInTheDocument();
+    expect(within(polyAlphaTable).getByText("2026-05-06T10:31:00.000Z")).toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("97%")).not.toBeInTheDocument();
     expect(within(polyAlphaTable).queryByText("99%")).not.toBeInTheDocument();
+    expect(within(polyAlphaTable).queryByText("$999,999")).not.toBeInTheDocument();
+  });
+
+  it("queues only the selected opportunity when multiple outcomes share a market", async () => {
+    const user = userEvent.setup();
+    const client = await import("../api/client");
+    vi.mocked(client.fetchPolyAlphaOpportunities).mockResolvedValue([
+      {
+        ...mockPolyAlphaOpportunities[0],
+        id: "poly-opp-shared-yes",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "yes-token",
+        marketProbability: 58,
+        estimatedProbability: 64
+      },
+      {
+        ...mockPolyAlphaOpportunities[0],
+        id: "poly-opp-shared-no",
+        venueMarketId: "mkt-shared",
+        venueContractId: "condition-shared",
+        outcomeId: "no-token",
+        marketProbability: 42,
+        estimatedProbability: 36
+      }
+    ]);
+
+    render(<MarketsPage />);
+
+    const polyAlphaTable = await screen.findByRole("table", { name: "Poly Alpha market links" });
+    const actionButtons = within(polyAlphaTable).getAllByRole("button", {
+      name: "Send mkt-shared to research/Cockpit"
+    });
+    await user.click(actionButtons[0]);
+
+    const rows = within(polyAlphaTable).getAllByRole("row");
+    const yesRow = rows.find((row) => within(row).queryByText("58% vs 64%"));
+    const noRow = rows.find((row) => within(row).queryByText("42% vs 36%"));
+
+    expect(yesRow).toBeDefined();
+    expect(noRow).toBeDefined();
+    expect(within(yesRow!).getByText("queued for cockpit")).toBeInTheDocument();
+    expect(within(noRow!).queryByText("queued for cockpit")).not.toBeInTheDocument();
   });
 
   it("updates the selected market detail from the candidate table", async () => {

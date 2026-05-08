@@ -354,6 +354,27 @@ describe("AuditPage", () => {
   });
 
   it("shows a Poly Alpha evidence chain including exploration decisions and paper fill skips", async () => {
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
+      {
+        source: "api",
+        id: "api-audit-explore-fed",
+        action: "exploration_decision",
+        entityType: "exploration_decision",
+        entityId: "api-explore-fed",
+        opportunityId: "poly-opp-fed-june",
+        strategyVersionId: "strategy-v1",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: {},
+        after: { decision: "pass" },
+        result: "accepted",
+        reason: "enough samples",
+        requestId: "",
+        createdAt: "2026-05-06T10:09:00.000Z"
+      },
+      apiPolyAlphaAuditEvents[0]
+    ]);
+
     render(<AuditPage />);
 
     expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
@@ -435,6 +456,42 @@ describe("AuditPage", () => {
         createdAt: "2026-05-06T10:10:00.000Z"
       }
     ]);
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
+      {
+        source: "api",
+        id: "api-audit-explore-b",
+        action: "exploration_decision_b",
+        entityType: "exploration_decision",
+        entityId: "api-explore-b",
+        opportunityId: "poly-opp-shared",
+        strategyVersionId: "strategy-v1",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: {},
+        after: { decision: "reject" },
+        result: "accepted",
+        reason: "second pack",
+        requestId: "",
+        createdAt: "2026-05-06T10:10:00.000Z"
+      },
+      {
+        source: "api",
+        id: "api-audit-explore-a",
+        action: "exploration_decision_a",
+        entityType: "exploration_decision",
+        entityId: "api-explore-a",
+        opportunityId: "poly-opp-shared",
+        strategyVersionId: "strategy-v1",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: {},
+        after: { decision: "pass" },
+        result: "accepted",
+        reason: "first pack",
+        requestId: "",
+        createdAt: "2026-05-06T10:09:00.000Z"
+      }
+    ]);
 
     render(<AuditPage />);
 
@@ -446,8 +503,10 @@ describe("AuditPage", () => {
 
     expect(firstPackRow).toBeDefined();
     expect(secondPackRow).toBeDefined();
+    expect(within(firstPackRow!).getByText("exploration_decision_a")).toBeInTheDocument();
     expect(within(firstPackRow!).getByText("api-explore-a")).toBeInTheDocument();
     expect(within(firstPackRow!).getByText("pass")).toBeInTheDocument();
+    expect(within(secondPackRow!).getByText("exploration_decision_b")).toBeInTheDocument();
     expect(within(secondPackRow!).getByText("api-explore-b")).toBeInTheDocument();
     expect(within(secondPackRow!).getByText("reject")).toBeInTheDocument();
   });

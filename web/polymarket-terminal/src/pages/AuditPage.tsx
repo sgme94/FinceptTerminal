@@ -353,18 +353,24 @@ export function AuditPage() {
           (decision) => decision.evidencePackId === "" && decision.opportunityId === pack.opportunityId
         );
         const explorationDecision = exactExplorationDecision ?? opportunityFallbackDecision;
-        const polyAlphaExplorationEvent = polyAlphaAuditEvents.find(
-          (event) =>
-            event.action.startsWith("exploration") &&
-            (event.opportunityId === pack.opportunityId ||
-              event.entityId === pack.opportunityId ||
-              event.entityId === explorationDecision?.id)
-        );
-        const generalExplorationEvent = events.find(
-          (event) =>
-            event.action?.startsWith("exploration") &&
-            (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
-        );
+        const polyAlphaExplorationEvent = explorationDecision
+          ? polyAlphaAuditEvents.find(
+              (event) =>
+                event.action.startsWith("exploration") && event.entityId === explorationDecision.id
+            )
+          : polyAlphaAuditEvents.find(
+              (event) => event.action.startsWith("exploration") && event.entityId === pack.opportunityId
+            );
+        const generalExplorationEvent = explorationDecision
+          ? events.find(
+              (event) =>
+                event.action?.startsWith("exploration") && event.entityId === explorationDecision.id
+            )
+          : events.find(
+              (event) =>
+                event.action?.startsWith("exploration") &&
+                (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
+            );
         const polyAlphaPaperFillEvent = polyAlphaAuditEvents.find(
           (event) =>
             event.action === "paper_fill_skipped" &&

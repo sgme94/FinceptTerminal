@@ -104,23 +104,11 @@ function matchesPolyAlphaMarketIdentity(
   opportunity: PolyAlphaOpportunity,
   candidate: Pick<PolyAlphaEventMarketLink | PolyAlphaMarketSnapshot, "venueMarketId" | "venueContractId" | "outcomeId">
 ) {
-  if (candidate.venueMarketId !== opportunity.venueMarketId) {
-    return false;
-  }
-
-  if (
-    opportunity.venueContractId &&
-    candidate.venueContractId &&
-    candidate.venueContractId !== opportunity.venueContractId
-  ) {
-    return false;
-  }
-
-  if (opportunity.outcomeId && candidate.outcomeId && candidate.outcomeId !== opportunity.outcomeId) {
-    return false;
-  }
-
-  return true;
+  return (
+    candidate.venueMarketId === opportunity.venueMarketId &&
+    candidate.venueContractId === opportunity.venueContractId &&
+    candidate.outcomeId === opportunity.outcomeId
+  );
 }
 
 export function MarketsPage() {
@@ -134,8 +122,8 @@ export function MarketsPage() {
   const [selectedMarketId, setSelectedMarketId] = useState(mockTerminalSnapshot.markets[0]?.id ?? "");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [searchFilter, setSearchFilter] = useState("");
-  const [cockpitHandoffMarketIds, setCockpitHandoffMarketIds] = useState<string[]>(() =>
-    readCockpitHandoffs().map((handoff) => handoff.venueMarketId)
+  const [cockpitHandoffOpportunityIds, setCockpitHandoffOpportunityIds] = useState<string[]>(() =>
+    readCockpitHandoffs().map((handoff) => handoff.opportunityId)
   );
   const [lastCockpitHandoffMarketId, setLastCockpitHandoffMarketId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -216,7 +204,10 @@ export function MarketsPage() {
       })),
     [polyAlphaEvidencePacks, polyAlphaLinks, polyAlphaMarketSnapshots, polyAlphaOpportunities]
   );
-  const cockpitHandoffSet = useMemo(() => new Set(cockpitHandoffMarketIds), [cockpitHandoffMarketIds]);
+  const cockpitHandoffSet = useMemo(
+    () => new Set(cockpitHandoffOpportunityIds),
+    [cockpitHandoffOpportunityIds]
+  );
 
   function handleCockpitHandoff(opportunity: PolyAlphaOpportunity) {
     const handoff: CockpitHandoff = {
@@ -228,8 +219,8 @@ export function MarketsPage() {
       createdAt: new Date().toISOString()
     };
     writeCockpitHandoffs(upsertCockpitHandoff(readCockpitHandoffs(), handoff));
-    setCockpitHandoffMarketIds((current) =>
-      current.includes(opportunity.venueMarketId) ? current : [...current, opportunity.venueMarketId]
+    setCockpitHandoffOpportunityIds((current) =>
+      current.includes(opportunity.id) ? current : [...current, opportunity.id]
     );
     setLastCockpitHandoffMarketId(opportunity.venueMarketId);
     window.dispatchEvent(
@@ -325,7 +316,7 @@ export function MarketsPage() {
     {
       key: "handoff",
       header: "Handoff",
-      render: (row) => (cockpitHandoffSet.has(row.opportunity.venueMarketId) ? "queued for cockpit" : "")
+      render: (row) => (cockpitHandoffSet.has(row.opportunity.id) ? "queued for cockpit" : "")
     },
     {
       key: "action",
