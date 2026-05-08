@@ -418,6 +418,37 @@ describe("AuditPage", () => {
     expect(within(chain).queryByText("paper_fill_skipped")).not.toBeInTheDocument();
   });
 
+  it("shows recorded paper fills in the Poly Alpha evidence chain", async () => {
+    vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
+    vi.mocked(fetchPolyAlphaAuditEvents).mockResolvedValue([
+      {
+        source: "api",
+        id: "api-paper-fill-recorded",
+        action: "paper_fill_recorded",
+        entityType: "proposal",
+        entityId: "prop-1",
+        opportunityId: "poly-opp-fed-june",
+        strategyVersionId: "strategy-v1",
+        actorType: "system",
+        actorId: "poly-alpha",
+        before: { status: "approved" },
+        after: { status: "filled" },
+        result: "accepted",
+        reason: "paper fill recorded",
+        requestId: "req-recorded",
+        createdAt: "2026-05-06T10:18:00.000Z"
+      }
+    ]);
+
+    render(<AuditPage />);
+
+    expect(await screen.findByRole("heading", { name: "Audit" })).toBeInTheDocument();
+
+    const chain = screen.getByRole("table", { name: "Poly Alpha evidence chain" });
+    expect(within(chain).getByText("poly-evidence-fed")).toBeInTheDocument();
+    expect(within(chain).getByText("paper_fill_recorded")).toBeInTheDocument();
+  });
+
   it("matches exploration decisions to their exact evidence pack before falling back to opportunity", async () => {
     vi.mocked(getAuditEvents).mockResolvedValue(auditEvents.slice(0, 4));
     vi.mocked(fetchPolyAlphaEvidencePacks).mockResolvedValue([

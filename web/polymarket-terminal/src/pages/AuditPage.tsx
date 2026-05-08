@@ -67,6 +67,10 @@ function statusTransition(event: AuditEvent) {
   return beforeStatus && afterStatus ? `${beforeStatus} -> ${afterStatus}` : "No transition";
 }
 
+function isPaperFillAction(action?: string) {
+  return action === "paper_fill_recorded" || action === "paper_fill_skipped";
+}
+
 const proposalColumns: Array<DenseDataTableColumn<TradeProposal>> = [
   {
     key: "id",
@@ -373,12 +377,12 @@ export function AuditPage() {
             );
         const polyAlphaPaperFillEvent = polyAlphaAuditEvents.find(
           (event) =>
-            event.action === "paper_fill_skipped" &&
+            isPaperFillAction(event.action) &&
             (event.opportunityId === pack.opportunityId || event.entityId === pack.opportunityId)
         );
         const generalPaperFillEvent = events.find(
           (event) =>
-            event.action === "paper_fill_skipped" &&
+            isPaperFillAction(event.action) &&
             (event.entityId === pack.opportunityId || event.message.includes(pack.opportunityId))
         );
         const promotion = polyAlphaPromotions.find((decision) => decision.opportunityId === pack.opportunityId);

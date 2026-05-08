@@ -44,12 +44,20 @@ Open `http://127.0.0.1:4177`.
 ```powershell
 python -m pytest fincept-qt/scripts/algo_trading/tests fincept-qt/scripts/polymarket_web_api/tests -q --basetemp .pytest_tmp
 npm test --prefix web/polymarket-terminal
+npm run lint --prefix web/polymarket-terminal
 npm run build --prefix web/polymarket-terminal
 Get-NetTCPConnection -LocalPort 4177,8765 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess
 npm run test:e2e --prefix web/polymarket-terminal
+Get-NetTCPConnection -LocalPort 4177,8765 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess
 ```
 
 The e2e command starts its own API and frontend web servers on `8765` and `4177`, so the port check must be empty before running it.
+
+## Poly Alpha Endpoints
+
+The terminal reads Poly Alpha paper workflow data from `/api/poly-alpha/config-versions`, `/api/poly-alpha/source-sets`, `/api/poly-alpha/strategy-versions`, `/api/poly-alpha/opportunities`, `/api/poly-alpha/scan-runs`, `/api/poly-alpha/scan-results`, `/api/poly-alpha/evidence-packs`, `/api/poly-alpha/exploration-decisions`, `/api/poly-alpha/documents`, `/api/poly-alpha/events`, `/api/poly-alpha/links`, `/api/poly-alpha/research-runs`, `/api/poly-alpha/findings`, `/api/poly-alpha/market-snapshots`, `/api/poly-alpha/shadow-signals`, `/api/poly-alpha/validations`, `/api/poly-alpha/promotions`, and `/api/poly-alpha/audit`.
+
+Control endpoints are also paper-only: manual research tasks use `/api/poly-alpha/research-runs/manual`, deterministic scans use `/api/poly-alpha/scan-runs/deterministic`, evidence packs use `/api/poly-alpha/evidence-packs/build`, exploration decisions use `/api/poly-alpha/exploration-decisions/decide`, validation uses `/api/poly-alpha/validations/run`, promotion uses `/api/poly-alpha/promotions/evaluate`, and promoted paper proposals use `/api/poly-alpha/paper-proposals/create`. Risk approval uses `/api/proposals/{id}/approve` and must remain a paper workflow.
 
 ## Paper-Only Safety
 
