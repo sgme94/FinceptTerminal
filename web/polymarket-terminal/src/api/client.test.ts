@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   approveTradeProposal,
+  buildPolyAlphaSignalFilters,
+  fetchPolyAlphaCockpit,
+  fetchPolyAlphaDocuments,
+  fetchPolyAlphaEvents,
+  fetchPolyAlphaFindings,
+  fetchPolyAlphaLinks,
+  fetchPolyAlphaMarketSnapshots,
+  fetchPolyAlphaOpportunities,
+  fetchPolyAlphaResearchRuns,
+  fetchPolyAlphaScanRuns,
   getAuditEvents,
   getBotStatus,
   getCandidates,
@@ -562,5 +572,185 @@ describe("terminal api client", () => {
 
     expect(snapshot.status.exposureUsd).toBe(7);
     expect(snapshot.status.activeMarkets).toBe(2);
+  });
+
+  it("fetches poly alpha resources from their backend api endpoints", async () => {
+    const responseByUrl: Record<string, unknown> = {
+      "http://localhost:8765/api/poly-alpha/opportunities": {
+        items: [
+          {
+            opportunity_id: "opp-1",
+            market_id: "market-1",
+            title: "Fed path repricing",
+            score: 82,
+            created_at: "2026-05-06T01:00:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/scan-runs": {
+        items: [
+          {
+            scan_run_id: "scan-1",
+            status: "completed",
+            started_at: "2026-05-06T01:00:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/market-snapshots": {
+        items: [
+          {
+            snapshot_id: "snapshot-1",
+            market_id: "market-1",
+            probability: 0.58,
+            liquidity: 126000
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/documents": {
+        items: [
+          {
+            document_id: "doc-1",
+            title: "FOMC calendar",
+            url: "https://example.com/fomc"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/events": {
+        items: [
+          {
+            event_id: "event-1",
+            title: "FOMC decision",
+            starts_at: "2026-06-17T18:00:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/links": {
+        items: [
+          {
+            link_id: "link-1",
+            event_id: "event-1",
+            market_id: "market-1"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/research-runs": {
+        items: [
+          {
+            research_run_id: "research-1",
+            status: "completed",
+            started_at: "2026-05-06T01:00:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/findings": {
+        items: [
+          {
+            finding_id: "finding-1",
+            research_run_id: "research-1",
+            summary: "Policy pricing moved."
+          }
+        ]
+      }
+    };
+    const fetchMock = vi.fn((url: string) => {
+      const response = responseByUrl[url];
+
+      if (!response) {
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(response)
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchPolyAlphaOpportunities()).resolves.toEqual([
+      expect.objectContaining({ id: "opp-1", marketId: "market-1", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaScanRuns()).resolves.toEqual([
+      expect.objectContaining({ id: "scan-1", status: "completed", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaMarketSnapshots()).resolves.toEqual([
+      expect.objectContaining({ id: "snapshot-1", marketId: "market-1", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaDocuments()).resolves.toEqual([
+      expect.objectContaining({ id: "doc-1", title: "FOMC calendar", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaEvents()).resolves.toEqual([
+      expect.objectContaining({ id: "event-1", title: "FOMC decision", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaLinks()).resolves.toEqual([
+      expect.objectContaining({ id: "link-1", eventId: "event-1", marketId: "market-1", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaResearchRuns()).resolves.toEqual([
+      expect.objectContaining({ id: "research-1", status: "completed", source: "api" })
+    ]);
+    await expect(fetchPolyAlphaFindings()).resolves.toEqual([
+      expect.objectContaining({ id: "finding-1", researchRunId: "research-1", source: "api" })
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/opportunities");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/scan-runs");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/market-snapshots");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/documents");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/events");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/links");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/research-runs");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/findings");
+  });
+
+  it("combines poly alpha cockpit resources from their backend api endpoints", async () => {
+    const responseByUrl: Record<string, unknown> = {
+      "http://localhost:8765/api/poly-alpha/opportunities": {
+        items: [{ opportunity_id: "opp-1", market_id: "market-1", title: "Fed path repricing" }]
+      },
+      "http://localhost:8765/api/poly-alpha/scan-runs": {
+        items: [{ scan_run_id: "scan-1", status: "completed" }]
+      },
+      "http://localhost:8765/api/poly-alpha/shadow-signals": {
+        items: [{ shadow_signal_id: "shadow-1", status: "active", market_id: "market-1" }]
+      },
+      "http://localhost:8765/api/poly-alpha/validations": {
+        items: [{ validation_id: "validation-1", status: "passed", market_id: "market-1" }]
+      },
+      "http://localhost:8765/api/poly-alpha/promotions": {
+        items: [{ promotion_id: "promotion-1", decision: "watch", market_id: "market-1" }]
+      }
+    };
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(responseByUrl[url])
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cockpit = await fetchPolyAlphaCockpit();
+
+    expect(cockpit.opportunities).toEqual([
+      expect.objectContaining({ id: "opp-1", marketId: "market-1", source: "api" })
+    ]);
+    expect(cockpit.scanRuns).toEqual([expect.objectContaining({ id: "scan-1", source: "api" })]);
+    expect(cockpit.shadowSignals).toEqual([
+      expect.objectContaining({ id: "shadow-1", status: "active", source: "api" })
+    ]);
+    expect(cockpit.validations).toEqual([
+      expect.objectContaining({ id: "validation-1", status: "passed", source: "api" })
+    ]);
+    expect(cockpit.promotions).toEqual([
+      expect.objectContaining({ id: "promotion-1", decision: "watch", source: "api" })
+    ]);
+  });
+
+  it("keeps poly alpha F3 shadow signal statuses separate from promotion decisions", () => {
+    const filters = buildPolyAlphaSignalFilters({
+      shadowStatuses: ["active", "watch"],
+      promotionDecisions: ["watch", "promote"]
+    });
+
+    expect(filters.shadowStatuses).toEqual(["active"]);
+    expect(filters.promotionDecisions).toEqual(["watch", "promote"]);
   });
 });

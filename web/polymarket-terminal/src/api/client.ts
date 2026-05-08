@@ -6,6 +6,19 @@ import {
   mockMarketCandidates,
   mockPaperPositions,
   mockPaperTrades,
+  mockPolyAlphaDocuments,
+  mockPolyAlphaEvents,
+  mockPolyAlphaEvidencePacks,
+  mockPolyAlphaFindings,
+  mockPolyAlphaLinks,
+  mockPolyAlphaMarketSnapshots,
+  mockPolyAlphaOpportunities,
+  mockPolyAlphaPromotionDecisions,
+  mockPolyAlphaResearchRuns,
+  mockPolyAlphaScanResults,
+  mockPolyAlphaScanRuns,
+  mockPolyAlphaShadowSignals,
+  mockPolyAlphaValidationResults,
   mockRiskLimits,
   mockSignals,
   mockSkips,
@@ -18,6 +31,23 @@ import type {
   MarketCandidate,
   PaperPosition,
   PaperTrade,
+  PolyAlphaAgentFinding,
+  PolyAlphaCockpit,
+  PolyAlphaDocument,
+  PolyAlphaEvent,
+  PolyAlphaEventMarketLink,
+  PolyAlphaEvidencePack,
+  PolyAlphaMarketSnapshot,
+  PolyAlphaOpportunity,
+  PolyAlphaPromotionDecision,
+  PolyAlphaPromotionDecisionValue,
+  PolyAlphaResearchRun,
+  PolyAlphaScanResult,
+  PolyAlphaScanRun,
+  PolyAlphaShadowSignal,
+  PolyAlphaShadowSignalStatus,
+  PolyAlphaSignalFilters,
+  PolyAlphaValidationResult,
   RiskLimit,
   SignalRow,
   SkipRow,
@@ -146,6 +176,12 @@ type PaperPositionResponse = {
 
 type PaperPositionListResponse = {
   positions: PaperPositionResponse[];
+};
+
+type PolyAlphaItemResponse = Record<string, unknown>;
+
+type PolyAlphaListResponse = {
+  items?: PolyAlphaItemResponse[];
 };
 
 export type ControlActionPayload = {
@@ -403,6 +439,252 @@ function mapPaperPosition(position: PaperPositionResponse): PaperPosition {
   };
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function arrayValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function probabilityValue(value: unknown): number {
+  const probability = numberValue(value);
+  return probability > 0 && probability <= 1 ? Math.round(probability * 100) : probability;
+}
+
+function mapPolyAlphaOpportunity(item: PolyAlphaItemResponse): PolyAlphaOpportunity {
+  return {
+    id: stringValue(item.opportunity_id ?? item.id),
+    marketId: stringValue(item.market_id),
+    eventId: stringValue(item.event_id) || undefined,
+    title: stringValue(item.title),
+    thesis: stringValue(item.thesis),
+    score: numberValue(item.score),
+    probability: probabilityValue(item.probability),
+    volumeUsd: numberValue(item.volume_usd ?? item.volume),
+    liquidityUsd: numberValue(item.liquidity_usd ?? item.liquidity),
+    edgeBps: numberValue(item.edge_bps),
+    status: stringValue(item.status),
+    tags: arrayValue(item.tags),
+    createdAt: stringValue(item.created_at),
+    updatedAt: stringValue(item.updated_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaScanRun(item: PolyAlphaItemResponse): PolyAlphaScanRun {
+  return {
+    id: stringValue(item.scan_run_id ?? item.id),
+    status: stringValue(item.status),
+    query: stringValue(item.query),
+    totalMarkets: numberValue(item.total_markets),
+    matchedMarkets: numberValue(item.matched_markets),
+    startedAt: stringValue(item.started_at),
+    completedAt: stringValue(item.completed_at),
+    error: stringValue(item.error),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaScanResult(item: PolyAlphaItemResponse): PolyAlphaScanResult {
+  return {
+    id: stringValue(item.scan_result_id ?? item.result_id ?? item.id),
+    scanRunId: stringValue(item.scan_run_id),
+    marketId: stringValue(item.market_id),
+    title: stringValue(item.title),
+    rank: numberValue(item.rank),
+    score: numberValue(item.score),
+    reason: stringValue(item.reason),
+    createdAt: stringValue(item.created_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaDocument(item: PolyAlphaItemResponse): PolyAlphaDocument {
+  return {
+    id: stringValue(item.document_id ?? item.id),
+    title: stringValue(item.title),
+    url: stringValue(item.url),
+    sourceName: stringValue(item.source_name),
+    author: stringValue(item.author),
+    publishedAt: stringValue(item.published_at),
+    summary: stringValue(item.summary),
+    metadata: recordValue(item.metadata),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaEvent(item: PolyAlphaItemResponse): PolyAlphaEvent {
+  return {
+    id: stringValue(item.event_id ?? item.id),
+    title: stringValue(item.title),
+    category: stringValue(item.category),
+    startsAt: stringValue(item.starts_at),
+    endsAt: stringValue(item.ends_at),
+    importance: numberValue(item.importance),
+    summary: stringValue(item.summary),
+    documentIds: arrayValue(item.document_ids),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaLink(item: PolyAlphaItemResponse): PolyAlphaEventMarketLink {
+  return {
+    id: stringValue(item.link_id ?? item.id),
+    eventId: stringValue(item.event_id),
+    marketId: stringValue(item.market_id),
+    marketTitle: stringValue(item.market_title),
+    relevanceScore: numberValue(item.relevance_score),
+    rationale: stringValue(item.rationale),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaResearchRun(item: PolyAlphaItemResponse): PolyAlphaResearchRun {
+  return {
+    id: stringValue(item.research_run_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
+    status: stringValue(item.status),
+    agent: stringValue(item.agent),
+    startedAt: stringValue(item.started_at),
+    completedAt: stringValue(item.completed_at),
+    findingCount: numberValue(item.finding_count),
+    error: stringValue(item.error),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaFinding(item: PolyAlphaItemResponse): PolyAlphaAgentFinding {
+  return {
+    id: stringValue(item.finding_id ?? item.id),
+    researchRunId: stringValue(item.research_run_id),
+    opportunityId: stringValue(item.opportunity_id),
+    agent: stringValue(item.agent),
+    summary: stringValue(item.summary),
+    confidence: probabilityValue(item.confidence),
+    evidenceIds: arrayValue(item.evidence_ids),
+    createdAt: stringValue(item.created_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaEvidencePack(item: PolyAlphaItemResponse): PolyAlphaEvidencePack {
+  return {
+    id: stringValue(item.evidence_pack_id ?? item.pack_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
+    title: stringValue(item.title),
+    summary: stringValue(item.summary),
+    documentIds: arrayValue(item.document_ids),
+    findingIds: arrayValue(item.finding_ids),
+    createdAt: stringValue(item.created_at),
+    updatedAt: stringValue(item.updated_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaMarketSnapshot(item: PolyAlphaItemResponse): PolyAlphaMarketSnapshot {
+  return {
+    id: stringValue(item.snapshot_id ?? item.id),
+    marketId: stringValue(item.market_id),
+    question: stringValue(item.question),
+    probability: probabilityValue(item.probability),
+    volumeUsd: numberValue(item.volume_usd ?? item.volume),
+    liquidityUsd: numberValue(item.liquidity_usd ?? item.liquidity),
+    spreadBps: numberValue(item.spread_bps),
+    timestamp: stringValue(item.timestamp ?? item.created_at),
+    source: "api"
+  };
+}
+
+function isPolyAlphaShadowSignalStatus(value: string): value is PolyAlphaShadowSignalStatus {
+  return value === "active" || value === "validated" || value === "rejected" || value === "expired";
+}
+
+function mapPolyAlphaShadowSignalStatus(value: unknown): PolyAlphaShadowSignalStatus {
+  const status = stringValue(value);
+  return isPolyAlphaShadowSignalStatus(status) ? status : "active";
+}
+
+function mapPolyAlphaDirection(value: unknown): PolyAlphaShadowSignal["direction"] {
+  return value === "no" || value === "sell" ? "no" : "yes";
+}
+
+function mapPolyAlphaShadowSignal(item: PolyAlphaItemResponse): PolyAlphaShadowSignal {
+  return {
+    id: stringValue(item.shadow_signal_id ?? item.signal_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
+    marketId: stringValue(item.market_id),
+    status: mapPolyAlphaShadowSignalStatus(item.status),
+    direction: mapPolyAlphaDirection(item.direction ?? item.outcome),
+    confidence: probabilityValue(item.confidence),
+    edgeBps: numberValue(item.edge_bps),
+    rationale: stringValue(item.rationale ?? item.reason),
+    createdAt: stringValue(item.created_at),
+    updatedAt: stringValue(item.updated_at),
+    source: "api"
+  };
+}
+
+function mapPolyAlphaValidation(item: PolyAlphaItemResponse): PolyAlphaValidationResult {
+  return {
+    id: stringValue(item.validation_id ?? item.id),
+    shadowSignalId: stringValue(item.shadow_signal_id ?? item.signal_id),
+    marketId: stringValue(item.market_id),
+    status: stringValue(item.status),
+    score: numberValue(item.score),
+    notes: stringValue(item.notes),
+    rules: recordValue(item.rules),
+    validatedAt: stringValue(item.validated_at ?? item.created_at),
+    source: "api"
+  };
+}
+
+function isPolyAlphaPromotionDecision(value: string): value is PolyAlphaPromotionDecisionValue {
+  return value === "watch" || value === "promote" || value === "reject" || value === "defer";
+}
+
+function mapPolyAlphaPromotionDecisionValue(value: unknown): PolyAlphaPromotionDecisionValue {
+  const decision = stringValue(value);
+  return isPolyAlphaPromotionDecision(decision) ? decision : "defer";
+}
+
+function mapPolyAlphaPromotion(item: PolyAlphaItemResponse): PolyAlphaPromotionDecision {
+  return {
+    id: stringValue(item.promotion_id ?? item.id),
+    shadowSignalId: stringValue(item.shadow_signal_id ?? item.signal_id),
+    marketId: stringValue(item.market_id),
+    decision: mapPolyAlphaPromotionDecisionValue(item.decision),
+    reason: stringValue(item.reason),
+    sizeUsd: numberValue(item.size_usd ?? item.size),
+    decidedAt: stringValue(item.decided_at),
+    createdAt: stringValue(item.created_at),
+    source: "api"
+  };
+}
+
+async function fetchPolyAlphaResource<T>(
+  path: string,
+  mapper: (item: PolyAlphaItemResponse) => T,
+  fallback: T[]
+): Promise<T[]> {
+  try {
+    const body = await fetchJson<PolyAlphaListResponse>(path);
+    return (body.items ?? []).map(mapper);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   try {
     return mapBotStatus(await fetchJson<BotStatusResponse>("/api/bot/status"));
@@ -498,6 +780,118 @@ export async function getPaperPositions(deploymentId?: string): Promise<PaperPos
 
 export async function getRiskLimits(): Promise<RiskLimit[]> {
   return mockRiskLimits;
+}
+
+export function buildPolyAlphaSignalFilters(input: {
+  shadowStatuses?: string[];
+  promotionDecisions?: string[];
+}): PolyAlphaSignalFilters {
+  return {
+    shadowStatuses: (input.shadowStatuses ?? []).filter(isPolyAlphaShadowSignalStatus),
+    promotionDecisions: (input.promotionDecisions ?? []).filter(isPolyAlphaPromotionDecision)
+  };
+}
+
+export async function fetchPolyAlphaOpportunities(): Promise<PolyAlphaOpportunity[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/opportunities",
+    mapPolyAlphaOpportunity,
+    mockPolyAlphaOpportunities
+  );
+}
+
+export async function fetchPolyAlphaScanRuns(): Promise<PolyAlphaScanRun[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/scan-runs", mapPolyAlphaScanRun, mockPolyAlphaScanRuns);
+}
+
+export async function fetchPolyAlphaScanResults(): Promise<PolyAlphaScanResult[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/scan-results",
+    mapPolyAlphaScanResult,
+    mockPolyAlphaScanResults
+  );
+}
+
+export async function fetchPolyAlphaMarketSnapshots(): Promise<PolyAlphaMarketSnapshot[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/market-snapshots",
+    mapPolyAlphaMarketSnapshot,
+    mockPolyAlphaMarketSnapshots
+  );
+}
+
+export async function fetchPolyAlphaDocuments(): Promise<PolyAlphaDocument[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/documents", mapPolyAlphaDocument, mockPolyAlphaDocuments);
+}
+
+export async function fetchPolyAlphaEvents(): Promise<PolyAlphaEvent[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/events", mapPolyAlphaEvent, mockPolyAlphaEvents);
+}
+
+export async function fetchPolyAlphaLinks(): Promise<PolyAlphaEventMarketLink[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/links", mapPolyAlphaLink, mockPolyAlphaLinks);
+}
+
+export async function fetchPolyAlphaResearchRuns(): Promise<PolyAlphaResearchRun[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/research-runs",
+    mapPolyAlphaResearchRun,
+    mockPolyAlphaResearchRuns
+  );
+}
+
+export async function fetchPolyAlphaFindings(): Promise<PolyAlphaAgentFinding[]> {
+  return fetchPolyAlphaResource("/api/poly-alpha/findings", mapPolyAlphaFinding, mockPolyAlphaFindings);
+}
+
+export async function fetchPolyAlphaEvidencePacks(): Promise<PolyAlphaEvidencePack[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/evidence-packs",
+    mapPolyAlphaEvidencePack,
+    mockPolyAlphaEvidencePacks
+  );
+}
+
+export async function fetchPolyAlphaShadowSignals(): Promise<PolyAlphaShadowSignal[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/shadow-signals",
+    mapPolyAlphaShadowSignal,
+    mockPolyAlphaShadowSignals
+  );
+}
+
+export async function fetchPolyAlphaValidations(): Promise<PolyAlphaValidationResult[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/validations",
+    mapPolyAlphaValidation,
+    mockPolyAlphaValidationResults
+  );
+}
+
+export async function fetchPolyAlphaPromotions(): Promise<PolyAlphaPromotionDecision[]> {
+  return fetchPolyAlphaResource(
+    "/api/poly-alpha/promotions",
+    mapPolyAlphaPromotion,
+    mockPolyAlphaPromotionDecisions
+  );
+}
+
+export async function fetchPolyAlphaCockpit(): Promise<PolyAlphaCockpit> {
+  const [opportunities, scanRuns, shadowSignals, validations, promotions] = await Promise.all([
+    fetchPolyAlphaOpportunities(),
+    fetchPolyAlphaScanRuns(),
+    fetchPolyAlphaShadowSignals(),
+    fetchPolyAlphaValidations(),
+    fetchPolyAlphaPromotions()
+  ]);
+
+  return {
+    opportunities,
+    scanRuns,
+    shadowSignals,
+    validations,
+    promotions
+  };
 }
 
 export async function approveTradeProposal(
