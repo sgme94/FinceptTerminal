@@ -10,6 +10,7 @@ import {
   fetchPolyAlphaMarketSnapshots,
   fetchPolyAlphaOpportunities,
   fetchPolyAlphaResearchRuns,
+  fetchPolyAlphaScanResults,
   fetchPolyAlphaScanRuns,
   getAuditEvents,
   getBotStatus,
@@ -580,10 +581,21 @@ describe("terminal api client", () => {
         items: [
           {
             opportunity_id: "opp-1",
-            market_id: "market-1",
+            strategy_version_id: "strategy-v1",
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            venue_contract_id: "condition-1",
+            outcome_id: "yes-token-1",
             title: "Fed path repricing",
-            score: 82,
-            created_at: "2026-05-06T01:00:00.000Z"
+            alpha_family: "macro",
+            status: "watch",
+            primary_reason: "late_information",
+            market_probability: 0.58,
+            estimated_probability: 0.64,
+            edge: 0.06,
+            confidence: 0.72,
+            created_at: "2026-05-06T01:00:00.000Z",
+            updated_at: "2026-05-06T01:05:00.000Z"
           }
         ]
       },
@@ -591,8 +603,39 @@ describe("terminal api client", () => {
         items: [
           {
             scan_run_id: "scan-1",
+            trigger_type: "deterministic",
+            strategy_version_id: "strategy-v1",
+            config_version_id: "config-v1",
+            source_set_version: "sources-v1",
             status: "completed",
-            started_at: "2026-05-06T01:00:00.000Z"
+            started_at: "2026-05-06T01:00:00.000Z",
+            completed_at: "2026-05-06T01:03:00.000Z",
+            scanned_count: 12,
+            ignored_count: 8,
+            watch_count: 3,
+            created_opportunity_count: 1,
+            error_message: "",
+            created_at: "2026-05-06T01:00:00.000Z"
+          }
+        ]
+      },
+      "http://localhost:8765/api/poly-alpha/scan-results": {
+        items: [
+          {
+            scan_result_id: "scan-result-1",
+            scan_run_id: "scan-1",
+            strategy_version_id: "strategy-v1",
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            venue_contract_id: "condition-1",
+            outcome_id: "yes-token-1",
+            decision: "watch",
+            reason: "Late information changed the price anchor.",
+            source_snapshot_ids: ["snapshot-1"],
+            source_document_ids: ["doc-1"],
+            created_opportunity_id: "opp-1",
+            observed_at: "2026-05-06T00:58:00.000Z",
+            created_at: "2026-05-06T01:03:00.000Z"
           }
         ]
       },
@@ -600,9 +643,26 @@ describe("terminal api client", () => {
         items: [
           {
             snapshot_id: "snapshot-1",
-            market_id: "market-1",
-            probability: 0.58,
-            liquidity: 126000
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            venue_contract_id: "condition-1",
+            outcome_id: "yes-token-1",
+            adapter_metadata: { market_slug: "fed-june" },
+            source_api: "clob",
+            observed_at: "2026-05-06T00:58:00.000Z",
+            fetched_at: "2026-05-06T00:59:00.000Z",
+            payload_hash: "snapshot-hash-1",
+            best_bid: 0.57,
+            best_ask: 0.59,
+            spread: 0.02,
+            top_bid_depth: 820,
+            top_ask_depth: 760,
+            mid_price: 0.58,
+            last_trade_price: 0.575,
+            liquidity: 126000,
+            volume: 842000,
+            raw_payload: { market_id: "market-1" },
+            created_at: "2026-05-06T01:00:00.000Z"
           }
         ]
       },
@@ -610,8 +670,26 @@ describe("terminal api client", () => {
         items: [
           {
             document_id: "doc-1",
+            source_type: "official",
+            source_name: "Federal Reserve",
             title: "FOMC calendar",
-            url: "https://example.com/fomc"
+            url: "https://example.com/fomc",
+            api_endpoint: "",
+            market_id: "",
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            venue_contract_id: "condition-1",
+            outcome_id: "yes-token-1",
+            asset_symbol: "FEDFUNDS",
+            topic: "rates",
+            published_at: "2026-05-06T00:00:00.000Z",
+            fetched_at: "2026-05-06T00:30:00.000Z",
+            observed_at: "2026-05-06T00:31:00.000Z",
+            payload_hash: "doc-hash-1",
+            normalized_text: "FOMC calendar text",
+            raw_payload: { title: "FOMC calendar" },
+            trust_level: "official",
+            created_at: "2026-05-06T00:30:00.000Z"
           }
         ]
       },
@@ -619,8 +697,14 @@ describe("terminal api client", () => {
         items: [
           {
             event_id: "event-1",
+            event_type: "macro_calendar",
             title: "FOMC decision",
-            starts_at: "2026-06-17T18:00:00.000Z"
+            summary: "June policy decision.",
+            primary_assets: ["FEDFUNDS"],
+            event_time: "2026-06-17T18:00:00.000Z",
+            status: "scheduled",
+            created_at: "2026-05-06T00:30:00.000Z",
+            updated_at: "2026-05-06T00:35:00.000Z"
           }
         ]
       },
@@ -629,16 +713,35 @@ describe("terminal api client", () => {
           {
             link_id: "link-1",
             event_id: "event-1",
-            market_id: "market-1"
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            venue_contract_id: "condition-1",
+            outcome_id: "yes-token-1",
+            adapter_metadata: { market_slug: "fed-june" },
+            outcome: "yes",
+            link_reason: "Market resolves from this FOMC decision.",
+            link_confidence: 0.93,
+            created_at: "2026-05-06T00:36:00.000Z"
           }
         ]
       },
       "http://localhost:8765/api/poly-alpha/research-runs": {
         items: [
           {
-            research_run_id: "research-1",
+            run_id: "research-1",
+            trigger_type: "manual_task",
+            opportunity_id: "opp-1",
+            evidence_pack_id: "evidence-1",
+            strategy_version_id: "strategy-v1",
+            event_id: "event-1",
+            venue: "polymarket",
+            venue_market_id: "market-1",
+            requested_by: "analyst",
             status: "completed",
-            started_at: "2026-05-06T01:00:00.000Z"
+            started_at: "2026-05-06T01:00:00.000Z",
+            completed_at: "2026-05-06T01:05:00.000Z",
+            model_config: { model: "researcher" },
+            created_at: "2026-05-06T01:00:00.000Z"
           }
         ]
       },
@@ -646,8 +749,22 @@ describe("terminal api client", () => {
         items: [
           {
             finding_id: "finding-1",
-            research_run_id: "research-1",
-            summary: "Policy pricing moved."
+            run_id: "research-1",
+            opportunity_id: "opp-1",
+            evidence_pack_id: "evidence-1",
+            strategy_version_id: "strategy-v1",
+            agent_role: "macro-news",
+            estimated_probability: 0.64,
+            market_probability: 0.58,
+            edge: 0.06,
+            confidence: 0.72,
+            recommendation: "watch",
+            thesis: "Policy pricing moved.",
+            evidence_ids: ["doc-1"],
+            counter_evidence_ids: [],
+            resolution_risks: ["ambiguous_resolution"],
+            blockers: [],
+            created_at: "2026-05-06T01:04:00.000Z"
           }
         ]
       }
@@ -667,13 +784,40 @@ describe("terminal api client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchPolyAlphaOpportunities()).resolves.toEqual([
-      expect.objectContaining({ id: "opp-1", marketId: "market-1", source: "api" })
+      expect.objectContaining({
+        id: "opp-1",
+        venueMarketId: "market-1",
+        marketProbability: 58,
+        estimatedProbability: 64,
+        edge: 0.06,
+        confidence: 72,
+        source: "api"
+      })
     ]);
     await expect(fetchPolyAlphaScanRuns()).resolves.toEqual([
       expect.objectContaining({ id: "scan-1", status: "completed", source: "api" })
     ]);
+    await expect(fetchPolyAlphaScanResults()).resolves.toEqual([
+      expect.objectContaining({
+        id: "scan-result-1",
+        scanRunId: "scan-1",
+        venueMarketId: "market-1",
+        sourceSnapshotIds: ["snapshot-1"],
+        sourceDocumentIds: ["doc-1"],
+        source: "api"
+      })
+    ]);
     await expect(fetchPolyAlphaMarketSnapshots()).resolves.toEqual([
-      expect.objectContaining({ id: "snapshot-1", marketId: "market-1", source: "api" })
+      expect.objectContaining({
+        id: "snapshot-1",
+        venueMarketId: "market-1",
+        observedAt: "2026-05-06T00:58:00.000Z",
+        midPrice: 0.58,
+        spread: 0.02,
+        bestBid: 0.57,
+        bestAsk: 0.59,
+        source: "api"
+      })
     ]);
     await expect(fetchPolyAlphaDocuments()).resolves.toEqual([
       expect.objectContaining({ id: "doc-1", title: "FOMC calendar", source: "api" })
@@ -682,17 +826,18 @@ describe("terminal api client", () => {
       expect.objectContaining({ id: "event-1", title: "FOMC decision", source: "api" })
     ]);
     await expect(fetchPolyAlphaLinks()).resolves.toEqual([
-      expect.objectContaining({ id: "link-1", eventId: "event-1", marketId: "market-1", source: "api" })
+      expect.objectContaining({ id: "link-1", eventId: "event-1", venueMarketId: "market-1", source: "api" })
     ]);
     await expect(fetchPolyAlphaResearchRuns()).resolves.toEqual([
       expect.objectContaining({ id: "research-1", status: "completed", source: "api" })
     ]);
     await expect(fetchPolyAlphaFindings()).resolves.toEqual([
-      expect.objectContaining({ id: "finding-1", researchRunId: "research-1", source: "api" })
+      expect.objectContaining({ id: "finding-1", runId: "research-1", source: "api" })
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/opportunities");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/scan-runs");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/scan-results");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/market-snapshots");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/documents");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8765/api/poly-alpha/events");
@@ -704,16 +849,16 @@ describe("terminal api client", () => {
   it("combines poly alpha cockpit resources from their backend api endpoints", async () => {
     const responseByUrl: Record<string, unknown> = {
       "http://localhost:8765/api/poly-alpha/opportunities": {
-        items: [{ opportunity_id: "opp-1", market_id: "market-1", title: "Fed path repricing" }]
+        items: [{ opportunity_id: "opp-1", venue_market_id: "market-1", title: "Fed path repricing" }]
       },
       "http://localhost:8765/api/poly-alpha/scan-runs": {
         items: [{ scan_run_id: "scan-1", status: "completed" }]
       },
       "http://localhost:8765/api/poly-alpha/shadow-signals": {
-        items: [{ shadow_signal_id: "shadow-1", status: "active", market_id: "market-1" }]
+        items: [{ shadow_signal_id: "shadow-1", status: "shadow", venue_market_id: "market-1" }]
       },
       "http://localhost:8765/api/poly-alpha/validations": {
-        items: [{ validation_id: "validation-1", status: "passed", market_id: "market-1" }]
+        items: [{ validation_id: "validation-1", pass_fail: "pass", shadow_signal_id: "shadow-1" }]
       },
       "http://localhost:8765/api/poly-alpha/promotions": {
         items: [{ promotion_id: "promotion-1", decision: "watch", market_id: "market-1" }]
@@ -730,14 +875,14 @@ describe("terminal api client", () => {
     const cockpit = await fetchPolyAlphaCockpit();
 
     expect(cockpit.opportunities).toEqual([
-      expect.objectContaining({ id: "opp-1", marketId: "market-1", source: "api" })
+      expect.objectContaining({ id: "opp-1", venueMarketId: "market-1", source: "api" })
     ]);
     expect(cockpit.scanRuns).toEqual([expect.objectContaining({ id: "scan-1", source: "api" })]);
     expect(cockpit.shadowSignals).toEqual([
-      expect.objectContaining({ id: "shadow-1", status: "active", source: "api" })
+      expect.objectContaining({ id: "shadow-1", status: "shadow", source: "api" })
     ]);
     expect(cockpit.validations).toEqual([
-      expect.objectContaining({ id: "validation-1", status: "passed", source: "api" })
+      expect.objectContaining({ id: "validation-1", passFail: "pass", source: "api" })
     ]);
     expect(cockpit.promotions).toEqual([
       expect.objectContaining({ id: "promotion-1", decision: "watch", source: "api" })
@@ -746,11 +891,11 @@ describe("terminal api client", () => {
 
   it("keeps poly alpha F3 shadow signal statuses separate from promotion decisions", () => {
     const filters = buildPolyAlphaSignalFilters({
-      shadowStatuses: ["active", "watch"],
-      promotionDecisions: ["watch", "promote"]
+      shadowStatuses: ["shadow", "validated", "rejected", "promoted", "expired", "watch"],
+      promotionDecisions: ["watch", "promote", "reject", "defer"]
     });
 
-    expect(filters.shadowStatuses).toEqual(["active"]);
-    expect(filters.promotionDecisions).toEqual(["watch", "promote"]);
+    expect(filters.shadowStatuses).toEqual(["shadow", "validated", "rejected", "promoted", "expired"]);
+    expect(filters.promotionDecisions).toEqual(["watch", "promote", "reject"]);
   });
 });

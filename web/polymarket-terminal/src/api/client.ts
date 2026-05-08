@@ -465,17 +465,19 @@ function probabilityValue(value: unknown): number {
 function mapPolyAlphaOpportunity(item: PolyAlphaItemResponse): PolyAlphaOpportunity {
   return {
     id: stringValue(item.opportunity_id ?? item.id),
-    marketId: stringValue(item.market_id),
-    eventId: stringValue(item.event_id) || undefined,
+    strategyVersionId: stringValue(item.strategy_version_id),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
     title: stringValue(item.title),
-    thesis: stringValue(item.thesis),
-    score: numberValue(item.score),
-    probability: probabilityValue(item.probability),
-    volumeUsd: numberValue(item.volume_usd ?? item.volume),
-    liquidityUsd: numberValue(item.liquidity_usd ?? item.liquidity),
-    edgeBps: numberValue(item.edge_bps),
+    alphaFamily: stringValue(item.alpha_family),
     status: stringValue(item.status),
-    tags: arrayValue(item.tags),
+    primaryReason: stringValue(item.primary_reason),
+    marketProbability: probabilityValue(item.market_probability),
+    estimatedProbability: probabilityValue(item.estimated_probability),
+    edge: numberValue(item.edge),
+    confidence: probabilityValue(item.confidence),
     createdAt: stringValue(item.created_at),
     updatedAt: stringValue(item.updated_at),
     source: "api"
@@ -485,13 +487,19 @@ function mapPolyAlphaOpportunity(item: PolyAlphaItemResponse): PolyAlphaOpportun
 function mapPolyAlphaScanRun(item: PolyAlphaItemResponse): PolyAlphaScanRun {
   return {
     id: stringValue(item.scan_run_id ?? item.id),
+    triggerType: stringValue(item.trigger_type),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    configVersionId: stringValue(item.config_version_id),
+    sourceSetVersion: stringValue(item.source_set_version),
     status: stringValue(item.status),
-    query: stringValue(item.query),
-    totalMarkets: numberValue(item.total_markets),
-    matchedMarkets: numberValue(item.matched_markets),
     startedAt: stringValue(item.started_at),
     completedAt: stringValue(item.completed_at),
-    error: stringValue(item.error),
+    scannedCount: numberValue(item.scanned_count),
+    ignoredCount: numberValue(item.ignored_count),
+    watchCount: numberValue(item.watch_count),
+    createdOpportunityCount: numberValue(item.created_opportunity_count),
+    errorMessage: stringValue(item.error_message),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
@@ -500,11 +508,17 @@ function mapPolyAlphaScanResult(item: PolyAlphaItemResponse): PolyAlphaScanResul
   return {
     id: stringValue(item.scan_result_id ?? item.result_id ?? item.id),
     scanRunId: stringValue(item.scan_run_id),
-    marketId: stringValue(item.market_id),
-    title: stringValue(item.title),
-    rank: numberValue(item.rank),
-    score: numberValue(item.score),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
+    decision: stringValue(item.decision),
     reason: stringValue(item.reason),
+    sourceSnapshotIds: arrayValue(item.source_snapshot_ids),
+    sourceDocumentIds: arrayValue(item.source_document_ids),
+    createdOpportunityId: stringValue(item.created_opportunity_id),
+    observedAt: stringValue(item.observed_at),
     createdAt: stringValue(item.created_at),
     source: "api"
   };
@@ -513,13 +527,26 @@ function mapPolyAlphaScanResult(item: PolyAlphaItemResponse): PolyAlphaScanResul
 function mapPolyAlphaDocument(item: PolyAlphaItemResponse): PolyAlphaDocument {
   return {
     id: stringValue(item.document_id ?? item.id),
-    title: stringValue(item.title),
-    url: stringValue(item.url),
+    sourceType: stringValue(item.source_type),
     sourceName: stringValue(item.source_name),
-    author: stringValue(item.author),
+    url: stringValue(item.url),
+    apiEndpoint: stringValue(item.api_endpoint),
+    marketId: stringValue(item.market_id),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
+    assetSymbol: stringValue(item.asset_symbol),
+    topic: stringValue(item.topic),
     publishedAt: stringValue(item.published_at),
-    summary: stringValue(item.summary),
-    metadata: recordValue(item.metadata),
+    fetchedAt: stringValue(item.fetched_at),
+    observedAt: stringValue(item.observed_at),
+    payloadHash: stringValue(item.payload_hash),
+    title: stringValue(item.title),
+    normalizedText: stringValue(item.normalized_text),
+    rawPayload: recordValue(item.raw_payload),
+    trustLevel: stringValue(item.trust_level),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
@@ -527,13 +554,14 @@ function mapPolyAlphaDocument(item: PolyAlphaItemResponse): PolyAlphaDocument {
 function mapPolyAlphaEvent(item: PolyAlphaItemResponse): PolyAlphaEvent {
   return {
     id: stringValue(item.event_id ?? item.id),
+    eventType: stringValue(item.event_type),
     title: stringValue(item.title),
-    category: stringValue(item.category),
-    startsAt: stringValue(item.starts_at),
-    endsAt: stringValue(item.ends_at),
-    importance: numberValue(item.importance),
     summary: stringValue(item.summary),
-    documentIds: arrayValue(item.document_ids),
+    primaryAssets: arrayValue(item.primary_assets),
+    eventTime: stringValue(item.event_time),
+    status: stringValue(item.status),
+    createdAt: stringValue(item.created_at),
+    updatedAt: stringValue(item.updated_at),
     source: "api"
   };
 }
@@ -542,24 +570,35 @@ function mapPolyAlphaLink(item: PolyAlphaItemResponse): PolyAlphaEventMarketLink
   return {
     id: stringValue(item.link_id ?? item.id),
     eventId: stringValue(item.event_id),
-    marketId: stringValue(item.market_id),
-    marketTitle: stringValue(item.market_title),
-    relevanceScore: numberValue(item.relevance_score),
-    rationale: stringValue(item.rationale),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
+    adapterMetadata: recordValue(item.adapter_metadata),
+    outcome: stringValue(item.outcome),
+    linkReason: stringValue(item.link_reason),
+    linkConfidence: numberValue(item.link_confidence),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
 
 function mapPolyAlphaResearchRun(item: PolyAlphaItemResponse): PolyAlphaResearchRun {
   return {
-    id: stringValue(item.research_run_id ?? item.id),
+    id: stringValue(item.run_id ?? item.id),
+    triggerType: stringValue(item.trigger_type),
     opportunityId: stringValue(item.opportunity_id),
-    status: stringValue(item.status),
-    agent: stringValue(item.agent),
+    evidencePackId: stringValue(item.evidence_pack_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    eventId: stringValue(item.event_id),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    requestedBy: stringValue(item.requested_by),
     startedAt: stringValue(item.started_at),
     completedAt: stringValue(item.completed_at),
-    findingCount: numberValue(item.finding_count),
-    error: stringValue(item.error),
+    status: stringValue(item.status),
+    modelConfig: recordValue(item.model_config),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
@@ -567,12 +606,21 @@ function mapPolyAlphaResearchRun(item: PolyAlphaItemResponse): PolyAlphaResearch
 function mapPolyAlphaFinding(item: PolyAlphaItemResponse): PolyAlphaAgentFinding {
   return {
     id: stringValue(item.finding_id ?? item.id),
-    researchRunId: stringValue(item.research_run_id),
+    runId: stringValue(item.run_id),
     opportunityId: stringValue(item.opportunity_id),
-    agent: stringValue(item.agent),
-    summary: stringValue(item.summary),
+    evidencePackId: stringValue(item.evidence_pack_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    agentRole: stringValue(item.agent_role),
+    estimatedProbability: probabilityValue(item.estimated_probability),
+    marketProbability: probabilityValue(item.market_probability),
+    edge: numberValue(item.edge),
     confidence: probabilityValue(item.confidence),
+    recommendation: stringValue(item.recommendation),
+    thesis: stringValue(item.thesis),
     evidenceIds: arrayValue(item.evidence_ids),
+    counterEvidenceIds: arrayValue(item.counter_evidence_ids),
+    resolutionRisks: arrayValue(item.resolution_risks),
+    blockers: arrayValue(item.blockers),
     createdAt: stringValue(item.created_at),
     source: "api"
   };
@@ -582,12 +630,16 @@ function mapPolyAlphaEvidencePack(item: PolyAlphaItemResponse): PolyAlphaEvidenc
   return {
     id: stringValue(item.evidence_pack_id ?? item.pack_id ?? item.id),
     opportunityId: stringValue(item.opportunity_id),
-    title: stringValue(item.title),
-    summary: stringValue(item.summary),
+    strategyVersionId: stringValue(item.strategy_version_id),
     documentIds: arrayValue(item.document_ids),
-    findingIds: arrayValue(item.finding_ids),
+    snapshotIds: arrayValue(item.snapshot_ids),
+    eventIds: arrayValue(item.event_ids),
+    sourceSetVersion: stringValue(item.source_set_version),
+    latestPublishedAt: stringValue(item.latest_published_at),
+    latestFetchedAt: stringValue(item.latest_fetched_at),
+    latestObservedAt: stringValue(item.latest_observed_at),
     createdAt: stringValue(item.created_at),
-    updatedAt: stringValue(item.updated_at),
+    payloadHash: stringValue(item.payload_hash),
     source: "api"
   };
 }
@@ -595,42 +647,65 @@ function mapPolyAlphaEvidencePack(item: PolyAlphaItemResponse): PolyAlphaEvidenc
 function mapPolyAlphaMarketSnapshot(item: PolyAlphaItemResponse): PolyAlphaMarketSnapshot {
   return {
     id: stringValue(item.snapshot_id ?? item.id),
-    marketId: stringValue(item.market_id),
-    question: stringValue(item.question),
-    probability: probabilityValue(item.probability),
-    volumeUsd: numberValue(item.volume_usd ?? item.volume),
-    liquidityUsd: numberValue(item.liquidity_usd ?? item.liquidity),
-    spreadBps: numberValue(item.spread_bps),
-    timestamp: stringValue(item.timestamp ?? item.created_at),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
+    adapterMetadata: recordValue(item.adapter_metadata),
+    sourceApi: stringValue(item.source_api),
+    observedAt: stringValue(item.observed_at),
+    fetchedAt: stringValue(item.fetched_at),
+    payloadHash: stringValue(item.payload_hash),
+    bestBid: numberValue(item.best_bid),
+    bestAsk: numberValue(item.best_ask),
+    spread: numberValue(item.spread),
+    topBidDepth: numberValue(item.top_bid_depth),
+    topAskDepth: numberValue(item.top_ask_depth),
+    midPrice: numberValue(item.mid_price),
+    lastTradePrice: numberValue(item.last_trade_price),
+    liquidity: numberValue(item.liquidity),
+    volume: numberValue(item.volume),
+    rawPayload: recordValue(item.raw_payload),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
 
 function isPolyAlphaShadowSignalStatus(value: string): value is PolyAlphaShadowSignalStatus {
-  return value === "active" || value === "validated" || value === "rejected" || value === "expired";
+  return (
+    value === "shadow" ||
+    value === "validated" ||
+    value === "rejected" ||
+    value === "promoted" ||
+    value === "expired"
+  );
 }
 
 function mapPolyAlphaShadowSignalStatus(value: unknown): PolyAlphaShadowSignalStatus {
   const status = stringValue(value);
-  return isPolyAlphaShadowSignalStatus(status) ? status : "active";
-}
-
-function mapPolyAlphaDirection(value: unknown): PolyAlphaShadowSignal["direction"] {
-  return value === "no" || value === "sell" ? "no" : "yes";
+  return isPolyAlphaShadowSignalStatus(status) ? status : "shadow";
 }
 
 function mapPolyAlphaShadowSignal(item: PolyAlphaItemResponse): PolyAlphaShadowSignal {
   return {
     id: stringValue(item.shadow_signal_id ?? item.signal_id ?? item.id),
     opportunityId: stringValue(item.opportunity_id),
-    marketId: stringValue(item.market_id),
-    status: mapPolyAlphaShadowSignalStatus(item.status),
-    direction: mapPolyAlphaDirection(item.direction ?? item.outcome),
+    runId: stringValue(item.run_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    strategyFamily: stringValue(item.strategy_family),
+    venue: stringValue(item.venue),
+    venueMarketId: stringValue(item.venue_market_id),
+    venueContractId: stringValue(item.venue_contract_id),
+    outcomeId: stringValue(item.outcome_id),
+    adapterMetadata: recordValue(item.adapter_metadata),
+    side: stringValue(item.side),
+    observedPrice: numberValue(item.observed_price),
+    estimatedProbability: probabilityValue(item.estimated_probability),
+    edge: numberValue(item.edge),
     confidence: probabilityValue(item.confidence),
-    edgeBps: numberValue(item.edge_bps),
-    rationale: stringValue(item.rationale ?? item.reason),
+    status: mapPolyAlphaShadowSignalStatus(item.status),
     createdAt: stringValue(item.created_at),
-    updatedAt: stringValue(item.updated_at),
+    expiresAt: stringValue(item.expires_at),
     source: "api"
   };
 }
@@ -638,36 +713,60 @@ function mapPolyAlphaShadowSignal(item: PolyAlphaItemResponse): PolyAlphaShadowS
 function mapPolyAlphaValidation(item: PolyAlphaItemResponse): PolyAlphaValidationResult {
   return {
     id: stringValue(item.validation_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
     shadowSignalId: stringValue(item.shadow_signal_id ?? item.signal_id),
-    marketId: stringValue(item.market_id),
-    status: stringValue(item.status),
-    score: numberValue(item.score),
-    notes: stringValue(item.notes),
-    rules: recordValue(item.rules),
-    validatedAt: stringValue(item.validated_at ?? item.created_at),
+    strategyVersionId: stringValue(item.strategy_version_id),
+    entrySnapshotId: stringValue(item.entry_snapshot_id),
+    exitSnapshotId: stringValue(item.exit_snapshot_id),
+    validationType: stringValue(item.validation_type),
+    entryPrice: numberValue(item.entry_price),
+    exitPrice: numberValue(item.exit_price),
+    holdingPeriod: stringValue(item.holding_period),
+    grossReturn: numberValue(item.gross_return),
+    costAdjustedReturn: numberValue(item.cost_adjusted_return),
+    closingLineValue: numberValue(item.closing_line_value),
+    brierScore: numberValue(item.brier_score),
+    calibrationError: numberValue(item.calibration_error),
+    edgeDecay: numberValue(item.edge_decay),
+    informationLagSec: numberValue(item.information_lag_sec),
+    fetchLagSec: numberValue(item.fetch_lag_sec),
+    marketMoveBeforeSignal: numberValue(item.market_move_before_signal),
+    marketMoveAfterSignal: numberValue(item.market_move_after_signal),
+    maxAdverseExcursion: numberValue(item.max_adverse_excursion),
+    maxFavorableExcursion: numberValue(item.max_favorable_excursion),
+    liquidityAssumption: stringValue(item.liquidity_assumption),
+    slippageAssumption: stringValue(item.slippage_assumption),
+    passFail: stringValue(item.pass_fail),
+    failureReason: stringValue(item.failure_reason),
+    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }
 
 function isPolyAlphaPromotionDecision(value: string): value is PolyAlphaPromotionDecisionValue {
-  return value === "watch" || value === "promote" || value === "reject" || value === "defer";
+  return value === "watch" || value === "promote" || value === "reject";
 }
 
 function mapPolyAlphaPromotionDecisionValue(value: unknown): PolyAlphaPromotionDecisionValue {
   const decision = stringValue(value);
-  return isPolyAlphaPromotionDecision(decision) ? decision : "defer";
+  return isPolyAlphaPromotionDecision(decision) ? decision : "watch";
 }
 
 function mapPolyAlphaPromotion(item: PolyAlphaItemResponse): PolyAlphaPromotionDecision {
   return {
     id: stringValue(item.promotion_id ?? item.id),
+    opportunityId: stringValue(item.opportunity_id),
     shadowSignalId: stringValue(item.shadow_signal_id ?? item.signal_id),
-    marketId: stringValue(item.market_id),
+    strategyVersionId: stringValue(item.strategy_version_id),
     decision: mapPolyAlphaPromotionDecisionValue(item.decision),
     reason: stringValue(item.reason),
-    sizeUsd: numberValue(item.size_usd ?? item.size),
+    predictionMetrics: recordValue(item.prediction_metrics),
+    tradingMetrics: recordValue(item.trading_metrics),
+    metrics: recordValue(item.metrics),
+    criticBlockers: arrayValue(item.critic_blockers),
+    riskChecks: recordValue(item.risk_checks),
+    proposalId: stringValue(item.proposal_id),
     decidedAt: stringValue(item.decided_at),
-    createdAt: stringValue(item.created_at),
     source: "api"
   };
 }

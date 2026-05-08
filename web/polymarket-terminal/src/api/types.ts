@@ -140,154 +140,317 @@ export type OrderBookSnapshot = DataQuality & {
 
 export type PolyAlphaOpportunity = DataQuality & {
   id: string;
-  marketId: string;
-  eventId?: string;
+  strategyVersionId: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
   title: string;
-  thesis: string;
-  score: number;
-  probability: number;
-  volumeUsd: number;
-  liquidityUsd: number;
-  edgeBps: number;
+  alphaFamily: string;
   status: string;
-  tags: string[];
+  primaryReason: string;
+  marketProbability: number;
+  estimatedProbability: number;
+  edge: number;
+  confidence: number;
   createdAt: string;
   updatedAt: string;
 };
 
 export type PolyAlphaScanRun = DataQuality & {
   id: string;
+  triggerType: string;
+  strategyVersionId: string;
+  configVersionId: string;
+  sourceSetVersion: string;
   status: string;
-  query: string;
-  totalMarkets: number;
-  matchedMarkets: number;
   startedAt: string;
   completedAt: string;
-  error: string;
+  scannedCount: number;
+  ignoredCount: number;
+  watchCount: number;
+  createdOpportunityCount: number;
+  errorMessage: string;
+  createdAt: string;
 };
 
 export type PolyAlphaScanResult = DataQuality & {
   id: string;
   scanRunId: string;
-  marketId: string;
-  title: string;
-  rank: number;
-  score: number;
+  strategyVersionId: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
+  decision: string;
   reason: string;
+  sourceSnapshotIds: string[];
+  sourceDocumentIds: string[];
+  createdOpportunityId: string;
+  observedAt: string;
   createdAt: string;
 };
 
 export type PolyAlphaDocument = DataQuality & {
   id: string;
-  title: string;
-  url: string;
+  sourceType: string;
   sourceName: string;
-  author: string;
+  url: string;
+  apiEndpoint: string;
+  marketId: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
+  assetSymbol: string;
+  topic: string;
   publishedAt: string;
-  summary: string;
-  metadata: Record<string, unknown>;
+  fetchedAt: string;
+  observedAt: string;
+  payloadHash: string;
+  title: string;
+  normalizedText: string;
+  rawPayload: Record<string, unknown>;
+  trustLevel: string;
+  createdAt: string;
 };
 
 export type PolyAlphaEvent = DataQuality & {
   id: string;
+  eventType: string;
   title: string;
-  category: string;
-  startsAt: string;
-  endsAt: string;
-  importance: number;
   summary: string;
-  documentIds: string[];
+  primaryAssets: string[];
+  eventTime: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PolyAlphaEventMarketLink = DataQuality & {
   id: string;
   eventId: string;
-  marketId: string;
-  marketTitle: string;
-  relevanceScore: number;
-  rationale: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
+  adapterMetadata: Record<string, unknown>;
+  outcome: string;
+  linkReason: string;
+  linkConfidence: number;
+  createdAt: string;
 };
 
 export type PolyAlphaResearchRun = DataQuality & {
   id: string;
+  triggerType: string;
   opportunityId: string;
-  status: string;
-  agent: string;
+  evidencePackId: string;
+  strategyVersionId: string;
+  eventId: string;
+  venue: string;
+  venueMarketId: string;
+  requestedBy: string;
   startedAt: string;
   completedAt: string;
-  findingCount: number;
-  error: string;
+  status: string;
+  modelConfig: Record<string, unknown>;
+  createdAt: string;
 };
 
 export type PolyAlphaAgentFinding = DataQuality & {
   id: string;
-  researchRunId: string;
+  runId: string;
   opportunityId: string;
-  agent: string;
-  summary: string;
+  evidencePackId: string;
+  strategyVersionId: string;
+  agentRole: string;
+  estimatedProbability: number;
+  marketProbability: number;
+  edge: number;
   confidence: number;
+  recommendation: string;
+  thesis: string;
   evidenceIds: string[];
+  counterEvidenceIds: string[];
+  resolutionRisks: string[];
+  blockers: string[];
   createdAt: string;
 };
 
 export type PolyAlphaEvidencePack = DataQuality & {
   id: string;
   opportunityId: string;
-  title: string;
-  summary: string;
+  strategyVersionId: string;
   documentIds: string[];
-  findingIds: string[];
+  snapshotIds: string[];
+  eventIds: string[];
+  sourceSetVersion: string;
+  latestPublishedAt: string;
+  latestFetchedAt: string;
+  latestObservedAt: string;
   createdAt: string;
-  updatedAt: string;
+  payloadHash: string;
 };
 
 export type PolyAlphaMarketSnapshot = DataQuality & {
   id: string;
-  marketId: string;
-  question: string;
-  probability: number;
-  volumeUsd: number;
-  liquidityUsd: number;
-  spreadBps: number;
-  timestamp: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
+  adapterMetadata: Record<string, unknown>;
+  sourceApi: string;
+  observedAt: string;
+  fetchedAt: string;
+  payloadHash: string;
+  bestBid: number;
+  bestAsk: number;
+  spread: number;
+  topBidDepth: number;
+  topAskDepth: number;
+  midPrice: number;
+  lastTradePrice: number;
+  liquidity: number;
+  volume: number;
+  rawPayload: Record<string, unknown>;
+  createdAt: string;
 };
 
-export type PolyAlphaShadowSignalStatus = "active" | "validated" | "rejected" | "expired";
+export type PolyAlphaShadowSignalStatus = "shadow" | "validated" | "rejected" | "promoted" | "expired";
 
 export type PolyAlphaShadowSignal = DataQuality & {
   id: string;
   opportunityId: string;
-  marketId: string;
-  status: PolyAlphaShadowSignalStatus;
-  direction: "yes" | "no";
+  runId: string;
+  strategyVersionId: string;
+  strategyFamily: string;
+  venue: string;
+  venueMarketId: string;
+  venueContractId: string;
+  outcomeId: string;
+  adapterMetadata: Record<string, unknown>;
+  side: string;
+  observedPrice: number;
+  estimatedProbability: number;
+  edge: number;
   confidence: number;
-  edgeBps: number;
-  rationale: string;
+  status: PolyAlphaShadowSignalStatus;
   createdAt: string;
-  updatedAt: string;
+  expiresAt: string;
 };
 
 export type PolyAlphaValidationResult = DataQuality & {
   id: string;
+  opportunityId: string;
   shadowSignalId: string;
-  marketId: string;
-  status: string;
-  score: number;
-  notes: string;
-  rules: Record<string, unknown>;
-  validatedAt: string;
+  strategyVersionId: string;
+  entrySnapshotId: string;
+  exitSnapshotId: string;
+  validationType: string;
+  entryPrice: number;
+  exitPrice: number;
+  holdingPeriod: string;
+  grossReturn: number;
+  costAdjustedReturn: number;
+  closingLineValue: number;
+  brierScore: number;
+  calibrationError: number;
+  edgeDecay: number;
+  informationLagSec: number;
+  fetchLagSec: number;
+  marketMoveBeforeSignal: number;
+  marketMoveAfterSignal: number;
+  maxAdverseExcursion: number;
+  maxFavorableExcursion: number;
+  liquidityAssumption: string;
+  slippageAssumption: string;
+  passFail: string;
+  failureReason: string;
+  createdAt: string;
 };
 
-export type PolyAlphaPromotionDecisionValue = "watch" | "promote" | "reject" | "defer";
+export type PolyAlphaPromotionDecisionValue = "watch" | "promote" | "reject";
 
 export type PolyAlphaPromotionDecision = DataQuality & {
   id: string;
+  opportunityId: string;
   shadowSignalId: string;
-  marketId: string;
+  strategyVersionId: string;
   decision: PolyAlphaPromotionDecisionValue;
   reason: string;
-  sizeUsd: number;
+  predictionMetrics: Record<string, unknown>;
+  tradingMetrics: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  criticBlockers: string[];
+  riskChecks: Record<string, unknown>;
+  proposalId: string;
   decidedAt: string;
+};
+
+export type PolyAlphaConfigVersion = DataQuality & {
+  id: string;
+  name: string;
+  validationFreshnessWindowSec: number;
+  minExplorationSamples: number;
+  minPromotionSamples: number;
+  minPromotionHistoryDays: number;
+  maxDrawdownThreshold: number;
+  minHitRate: number;
+  minPayoffRatio: number;
+  minCapacityMultiple: number;
+  promotionDefaults: Record<string, unknown>;
+  createdAt: string;
+  isActive: boolean;
+};
+
+export type PolyAlphaSourceSet = DataQuality & {
+  id: string;
+  name: string;
+  enabledSources: string[];
+  trustPolicy: Record<string, unknown>;
+  createdAt: string;
+  isActive: boolean;
+};
+
+export type PolyAlphaStrategyVersion = DataQuality & {
+  id: string;
+  strategyFamily: string;
+  strategyName: string;
+  version: string;
+  configVersionId: string;
+  promptVersion: string;
+  sourceSetVersion: string;
+  description: string;
+  createdAt: string;
+  isActive: boolean;
+};
+
+export type PolyAlphaExplorationDecision = DataQuality & {
+  id: string;
+  opportunityId: string;
+  evidencePackId: string;
+  strategyVersionId: string;
+  decision: string;
+  reason: string;
+  metrics: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type PolyAlphaAuditEvent = DataQuality & {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  opportunityId: string;
+  strategyVersionId: string;
+  actorType: string;
+  actorId: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  result: string;
+  reason: string;
+  requestId: string;
   createdAt: string;
 };
 

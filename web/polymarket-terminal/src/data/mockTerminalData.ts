@@ -7,10 +7,13 @@ import type {
   PaperTrade,
   ProbabilityPoint,
   PolyAlphaAgentFinding,
+  PolyAlphaAuditEvent,
+  PolyAlphaConfigVersion,
   PolyAlphaDocument,
   PolyAlphaEvent,
   PolyAlphaEventMarketLink,
   PolyAlphaEvidencePack,
+  PolyAlphaExplorationDecision,
   PolyAlphaMarketSnapshot,
   PolyAlphaOpportunity,
   PolyAlphaPromotionDecision,
@@ -18,6 +21,8 @@ import type {
   PolyAlphaScanResult,
   PolyAlphaScanRun,
   PolyAlphaShadowSignal,
+  PolyAlphaSourceSet,
+  PolyAlphaStrategyVersion,
   PolyAlphaValidationResult,
   RiskLimit,
   SignalRow,
@@ -315,22 +320,74 @@ export const mockOrderBook: OrderBookSnapshot = {
   ]
 };
 
+export const mockPolyAlphaConfigVersions: PolyAlphaConfigVersion[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "config-v1",
+    name: "Paper alpha defaults",
+    validationFreshnessWindowSec: 300,
+    minExplorationSamples: 10,
+    minPromotionSamples: 30,
+    minPromotionHistoryDays: 90,
+    maxDrawdownThreshold: 0.08,
+    minHitRate: 0.54,
+    minPayoffRatio: 1.2,
+    minCapacityMultiple: 3,
+    promotionDefaults: { maxSizeUsd: 250 },
+    createdAt: "2026-05-06T09:00:00.000Z",
+    isActive: true
+  }
+];
+
+export const mockPolyAlphaSourceSets: PolyAlphaSourceSet[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "sources-v1",
+    name: "Official news and CLOB",
+    enabledSources: ["official_calendar", "polymarket_clob", "newswire"],
+    trustPolicy: { official_calendar: "high", newswire: "medium" },
+    createdAt: "2026-05-06T09:00:00.000Z",
+    isActive: true
+  }
+];
+
+export const mockPolyAlphaStrategyVersions: PolyAlphaStrategyVersion[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "strategy-v1",
+    strategyFamily: "macro_event",
+    strategyName: "Event repricing scout",
+    version: "2026.05",
+    configVersionId: "config-v1",
+    promptVersion: "prompt-v3",
+    sourceSetVersion: "sources-v1",
+    description: "Find late information repricing in liquid event markets.",
+    createdAt: "2026-05-06T09:05:00.000Z",
+    isActive: true
+  }
+];
+
 export const mockPolyAlphaOpportunities: PolyAlphaOpportunity[] = [
   {
     source: "mock",
     stale: true,
     id: "poly-opp-fed-june",
-    marketId: "mkt-fed-2026",
-    eventId: "poly-event-fomc-june",
+    strategyVersionId: "strategy-v1",
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
     title: "Fed June path repricing",
-    thesis: "Rates articles moved faster than market pricing after fresh inflation commentary.",
-    score: 82,
-    probability: 58,
-    volumeUsd: 842000,
-    liquidityUsd: 126000,
-    edgeBps: 118,
-    status: "candidate",
-    tags: ["macro", "rates", "fomc"],
+    alphaFamily: "macro_event",
+    status: "shadow",
+    primaryReason: "late_information",
+    marketProbability: 58,
+    estimatedProbability: 64,
+    edge: 0.06,
+    confidence: 72,
     createdAt: "2026-05-06T10:10:00.000Z",
     updatedAt: "2026-05-06T10:28:00.000Z"
   },
@@ -338,17 +395,19 @@ export const mockPolyAlphaOpportunities: PolyAlphaOpportunity[] = [
     source: "mock",
     stale: true,
     id: "poly-opp-btc-may",
-    marketId: "mkt-btc-100k",
-    eventId: "poly-event-btc-expiry",
+    strategyVersionId: "strategy-v1",
+    venue: "polymarket",
+    venueMarketId: "mkt-btc-100k",
+    venueContractId: "condition-btc-100k",
+    outcomeId: "no-token-1",
     title: "Bitcoin month-end drift",
-    thesis: "Spot momentum is fading while prediction market liquidity remains deep.",
-    score: 68,
-    probability: 37,
-    volumeUsd: 1290000,
-    liquidityUsd: 221000,
-    edgeBps: 74,
-    status: "researching",
-    tags: ["crypto", "momentum"],
+    alphaFamily: "crypto_momentum",
+    status: "validated",
+    primaryReason: "insufficient_edge",
+    marketProbability: 37,
+    estimatedProbability: 32,
+    edge: -0.05,
+    confidence: 57,
     createdAt: "2026-05-06T10:12:00.000Z",
     updatedAt: "2026-05-06T10:24:00.000Z"
   }
@@ -359,13 +418,19 @@ export const mockPolyAlphaScanRuns: PolyAlphaScanRun[] = [
     source: "mock",
     stale: true,
     id: "poly-scan-001",
+    triggerType: "deterministic",
+    strategyVersionId: "strategy-v1",
+    configVersionId: "config-v1",
+    sourceSetVersion: "sources-v1",
     status: "completed",
-    query: "volume > 500000 and liquidity > 100000",
-    totalMarkets: 128,
-    matchedMarkets: 14,
     startedAt: "2026-05-06T10:00:00.000Z",
     completedAt: "2026-05-06T10:03:00.000Z",
-    error: ""
+    scannedCount: 128,
+    ignoredCount: 114,
+    watchCount: 12,
+    createdOpportunityCount: 2,
+    errorMessage: "",
+    createdAt: "2026-05-06T10:00:00.000Z"
   }
 ];
 
@@ -375,11 +440,17 @@ export const mockPolyAlphaScanResults: PolyAlphaScanResult[] = [
     stale: true,
     id: "poly-scan-result-fed",
     scanRunId: "poly-scan-001",
-    marketId: "mkt-fed-2026",
-    title: "Fed funds target above 4% after June meeting?",
-    rank: 1,
-    score: 82,
+    strategyVersionId: "strategy-v1",
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
+    decision: "watch",
     reason: "High liquidity, recent news density, and measurable price dislocation.",
+    sourceSnapshotIds: ["poly-snapshot-fed"],
+    sourceDocumentIds: ["poly-doc-fomc-calendar"],
+    createdOpportunityId: "poly-opp-fed-june",
+    observedAt: "2026-05-06T10:02:00.000Z",
     createdAt: "2026-05-06T10:03:00.000Z"
   }
 ];
@@ -389,25 +460,51 @@ export const mockPolyAlphaDocuments: PolyAlphaDocument[] = [
     source: "mock",
     stale: true,
     id: "poly-doc-fomc-calendar",
-    title: "FOMC June meeting calendar",
-    url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+    sourceType: "official",
     sourceName: "Federal Reserve",
-    author: "",
+    url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+    apiEndpoint: "",
+    marketId: "",
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
+    assetSymbol: "FEDFUNDS",
+    topic: "rates",
     publishedAt: "2026-05-06T09:30:00.000Z",
-    summary: "Official calendar confirms the June policy decision window.",
-    metadata: { topic: "rates" }
+    fetchedAt: "2026-05-06T09:31:00.000Z",
+    observedAt: "2026-05-06T09:31:00.000Z",
+    payloadHash: "doc-hash-fed",
+    title: "FOMC June meeting calendar",
+    normalizedText: "Official calendar confirms the June policy decision window.",
+    rawPayload: { source: "mock" },
+    trustLevel: "high",
+    createdAt: "2026-05-06T09:31:00.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-doc-btc-flows",
-    title: "ETF flow tracker",
-    url: "https://example.com/bitcoin-etf-flows",
+    sourceType: "research",
     sourceName: "Mock Research",
-    author: "Research desk",
+    url: "https://example.com/bitcoin-etf-flows",
+    apiEndpoint: "",
+    marketId: "",
+    venue: "polymarket",
+    venueMarketId: "mkt-btc-100k",
+    venueContractId: "condition-btc-100k",
+    outcomeId: "no-token-1",
+    assetSymbol: "BTC",
+    topic: "crypto",
     publishedAt: "2026-05-06T09:45:00.000Z",
-    summary: "Daily flow data shows slower spot demand into month end.",
-    metadata: { topic: "crypto" }
+    fetchedAt: "2026-05-06T09:46:00.000Z",
+    observedAt: "2026-05-06T09:46:00.000Z",
+    payloadHash: "doc-hash-btc",
+    title: "ETF flow tracker",
+    normalizedText: "Daily flow data shows slower spot demand into month end.",
+    rawPayload: { source: "mock" },
+    trustLevel: "medium",
+    createdAt: "2026-05-06T09:46:00.000Z"
   }
 ];
 
@@ -416,25 +513,27 @@ export const mockPolyAlphaEvents: PolyAlphaEvent[] = [
     source: "mock",
     stale: true,
     id: "poly-event-fomc-june",
+    eventType: "macro_calendar",
     title: "June FOMC decision",
-    category: "Macro",
-    startsAt: "2026-06-17T18:00:00.000Z",
-    endsAt: "2026-06-17T20:00:00.000Z",
-    importance: 5,
     summary: "Policy decision that resolves several rates-adjacent markets.",
-    documentIds: ["poly-doc-fomc-calendar"]
+    primaryAssets: ["FEDFUNDS"],
+    eventTime: "2026-06-17T18:00:00.000Z",
+    status: "scheduled",
+    createdAt: "2026-05-06T09:32:00.000Z",
+    updatedAt: "2026-05-06T09:32:00.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-event-btc-expiry",
+    eventType: "market_resolution",
     title: "Bitcoin May close",
-    category: "Crypto",
-    startsAt: "2026-06-01T03:59:00.000Z",
-    endsAt: "2026-06-01T03:59:00.000Z",
-    importance: 4,
     summary: "Month-end reference price for Bitcoin level markets.",
-    documentIds: ["poly-doc-btc-flows"]
+    primaryAssets: ["BTC"],
+    eventTime: "2026-06-01T03:59:00.000Z",
+    status: "scheduled",
+    createdAt: "2026-05-06T09:47:00.000Z",
+    updatedAt: "2026-05-06T09:47:00.000Z"
   }
 ];
 
@@ -444,20 +543,30 @@ export const mockPolyAlphaLinks: PolyAlphaEventMarketLink[] = [
     stale: true,
     id: "poly-link-fed",
     eventId: "poly-event-fomc-june",
-    marketId: "mkt-fed-2026",
-    marketTitle: "Fed funds target above 4% after June meeting?",
-    relevanceScore: 0.94,
-    rationale: "The market resolves directly from the FOMC target range."
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
+    adapterMetadata: { marketSlug: "fed-june" },
+    outcome: "yes",
+    linkReason: "The market resolves directly from the FOMC target range.",
+    linkConfidence: 0.94,
+    createdAt: "2026-05-06T09:33:00.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-link-btc",
     eventId: "poly-event-btc-expiry",
-    marketId: "mkt-btc-100k",
-    marketTitle: "Bitcoin above 100k on May 31?",
-    relevanceScore: 0.88,
-    rationale: "The event timestamp matches the market settlement window."
+    venue: "polymarket",
+    venueMarketId: "mkt-btc-100k",
+    venueContractId: "condition-btc-100k",
+    outcomeId: "no-token-1",
+    adapterMetadata: { marketSlug: "btc-100k-may" },
+    outcome: "no",
+    linkReason: "The event timestamp matches the market settlement window.",
+    linkConfidence: 0.88,
+    createdAt: "2026-05-06T09:48:00.000Z"
   }
 ];
 
@@ -466,13 +575,19 @@ export const mockPolyAlphaResearchRuns: PolyAlphaResearchRun[] = [
     source: "mock",
     stale: true,
     id: "poly-research-001",
+    triggerType: "manual_task",
     opportunityId: "poly-opp-fed-june",
-    status: "completed",
-    agent: "macro-news",
+    evidencePackId: "poly-evidence-fed",
+    strategyVersionId: "strategy-v1",
+    eventId: "poly-event-fomc-june",
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    requestedBy: "local-user",
     startedAt: "2026-05-06T10:04:00.000Z",
     completedAt: "2026-05-06T10:08:00.000Z",
-    findingCount: 2,
-    error: ""
+    status: "completed",
+    modelConfig: { model: "mock-researcher" },
+    createdAt: "2026-05-06T10:04:00.000Z"
   }
 ];
 
@@ -481,12 +596,21 @@ export const mockPolyAlphaFindings: PolyAlphaAgentFinding[] = [
     source: "mock",
     stale: true,
     id: "poly-finding-fed-001",
-    researchRunId: "poly-research-001",
+    runId: "poly-research-001",
     opportunityId: "poly-opp-fed-june",
-    agent: "macro-news",
-    summary: "Policy commentary increased the probability of a higher-for-longer outcome.",
+    evidencePackId: "poly-evidence-fed",
+    strategyVersionId: "strategy-v1",
+    agentRole: "macro-news",
+    estimatedProbability: 64,
+    marketProbability: 58,
+    edge: 0.06,
     confidence: 73,
+    recommendation: "watch",
+    thesis: "Policy commentary increased the probability of a higher-for-longer outcome.",
     evidenceIds: ["poly-doc-fomc-calendar"],
+    counterEvidenceIds: [],
+    resolutionRisks: ["ambiguous_resolution"],
+    blockers: [],
     createdAt: "2026-05-06T10:07:00.000Z"
   }
 ];
@@ -497,12 +621,31 @@ export const mockPolyAlphaEvidencePacks: PolyAlphaEvidencePack[] = [
     stale: true,
     id: "poly-evidence-fed",
     opportunityId: "poly-opp-fed-june",
-    title: "Fed path evidence pack",
-    summary: "Calendar, liquidity, and policy commentary supporting the rates opportunity.",
+    strategyVersionId: "strategy-v1",
     documentIds: ["poly-doc-fomc-calendar"],
-    findingIds: ["poly-finding-fed-001"],
+    snapshotIds: ["poly-snapshot-fed"],
+    eventIds: ["poly-event-fomc-june"],
+    sourceSetVersion: "sources-v1",
+    latestPublishedAt: "2026-05-06T09:30:00.000Z",
+    latestFetchedAt: "2026-05-06T09:31:00.000Z",
+    latestObservedAt: "2026-05-06T10:28:00.000Z",
     createdAt: "2026-05-06T10:08:00.000Z",
-    updatedAt: "2026-05-06T10:09:00.000Z"
+    payloadHash: "evidence-hash-fed"
+  }
+];
+
+export const mockPolyAlphaExplorationDecisions: PolyAlphaExplorationDecision[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "poly-explore-fed",
+    opportunityId: "poly-opp-fed-june",
+    evidencePackId: "poly-evidence-fed",
+    strategyVersionId: "strategy-v1",
+    decision: "pass",
+    reason: "Enough samples and fresh evidence to enter shadow tracking.",
+    metrics: { historicalSamples: 42 },
+    createdAt: "2026-05-06T10:09:00.000Z"
   }
 ];
 
@@ -511,25 +654,51 @@ export const mockPolyAlphaMarketSnapshots: PolyAlphaMarketSnapshot[] = [
     source: "mock",
     stale: true,
     id: "poly-snapshot-fed",
-    marketId: "mkt-fed-2026",
-    question: "Fed funds target above 4% after June meeting?",
-    probability: 58,
-    volumeUsd: 842000,
-    liquidityUsd: 126000,
-    spreadBps: 42,
-    timestamp: "2026-05-06T10:28:00.000Z"
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
+    adapterMetadata: { marketSlug: "fed-june" },
+    sourceApi: "clob",
+    observedAt: "2026-05-06T10:28:00.000Z",
+    fetchedAt: "2026-05-06T10:28:30.000Z",
+    payloadHash: "snapshot-hash-fed",
+    bestBid: 0.57,
+    bestAsk: 0.59,
+    spread: 0.02,
+    topBidDepth: 820,
+    topAskDepth: 760,
+    midPrice: 0.58,
+    lastTradePrice: 0.575,
+    liquidity: 126000,
+    volume: 842000,
+    rawPayload: { market: "mkt-fed-2026" },
+    createdAt: "2026-05-06T10:28:30.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-snapshot-btc",
-    marketId: "mkt-btc-100k",
-    question: "Bitcoin above 100k on May 31?",
-    probability: 37,
-    volumeUsd: 1290000,
-    liquidityUsd: 221000,
-    spreadBps: 35,
-    timestamp: "2026-05-06T10:24:00.000Z"
+    venue: "polymarket",
+    venueMarketId: "mkt-btc-100k",
+    venueContractId: "condition-btc-100k",
+    outcomeId: "no-token-1",
+    adapterMetadata: { marketSlug: "btc-100k-may" },
+    sourceApi: "clob",
+    observedAt: "2026-05-06T10:24:00.000Z",
+    fetchedAt: "2026-05-06T10:24:30.000Z",
+    payloadHash: "snapshot-hash-btc",
+    bestBid: 0.36,
+    bestAsk: 0.38,
+    spread: 0.02,
+    topBidDepth: 910,
+    topAskDepth: 870,
+    midPrice: 0.37,
+    lastTradePrice: 0.365,
+    liquidity: 221000,
+    volume: 1290000,
+    rawPayload: { market: "mkt-btc-100k" },
+    createdAt: "2026-05-06T10:24:30.000Z"
   }
 ];
 
@@ -539,28 +708,44 @@ export const mockPolyAlphaShadowSignals: PolyAlphaShadowSignal[] = [
     stale: true,
     id: "poly-shadow-fed",
     opportunityId: "poly-opp-fed-june",
-    marketId: "mkt-fed-2026",
-    status: "active",
-    direction: "yes",
+    runId: "poly-research-001",
+    strategyVersionId: "strategy-v1",
+    strategyFamily: "macro_event",
+    venue: "polymarket",
+    venueMarketId: "mkt-fed-2026",
+    venueContractId: "condition-fed-2026",
+    outcomeId: "yes-token-1",
+    adapterMetadata: { marketSlug: "fed-june" },
+    side: "yes",
+    observedPrice: 0.58,
+    estimatedProbability: 64,
+    edge: 0.06,
     confidence: 64,
-    edgeBps: 118,
-    rationale: "Shadow signal is active while validation checks replay recent pricing.",
+    status: "shadow",
     createdAt: "2026-05-06T10:13:00.000Z",
-    updatedAt: "2026-05-06T10:28:00.000Z"
+    expiresAt: "2026-05-07T10:13:00.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-shadow-btc",
     opportunityId: "poly-opp-btc-may",
-    marketId: "mkt-btc-100k",
-    status: "validated",
-    direction: "no",
+    runId: "poly-research-001",
+    strategyVersionId: "strategy-v1",
+    strategyFamily: "crypto_momentum",
+    venue: "polymarket",
+    venueMarketId: "mkt-btc-100k",
+    venueContractId: "condition-btc-100k",
+    outcomeId: "no-token-1",
+    adapterMetadata: { marketSlug: "btc-100k-may" },
+    side: "no",
+    observedPrice: 0.37,
+    estimatedProbability: 32,
+    edge: -0.05,
     confidence: 57,
-    edgeBps: 74,
-    rationale: "Signal passed liquidity checks but remains below promotion threshold.",
+    status: "validated",
     createdAt: "2026-05-06T10:14:00.000Z",
-    updatedAt: "2026-05-06T10:24:00.000Z"
+    expiresAt: "2026-05-07T10:14:00.000Z"
   }
 ];
 
@@ -569,13 +754,32 @@ export const mockPolyAlphaValidationResults: PolyAlphaValidationResult[] = [
     source: "mock",
     stale: true,
     id: "poly-validation-fed",
+    opportunityId: "poly-opp-fed-june",
     shadowSignalId: "poly-shadow-fed",
-    marketId: "mkt-fed-2026",
-    status: "passed",
-    score: 81,
-    notes: "Liquidity, spread, and stale-data checks passed.",
-    rules: { minLiquidityUsd: 100000, maxSpreadBps: 75 },
-    validatedAt: "2026-05-06T10:29:00.000Z"
+    strategyVersionId: "strategy-v1",
+    entrySnapshotId: "poly-snapshot-fed",
+    exitSnapshotId: "poly-snapshot-fed-exit",
+    validationType: "fixed_horizon",
+    entryPrice: 0.58,
+    exitPrice: 0.61,
+    holdingPeriod: "1h",
+    grossReturn: 0.03,
+    costAdjustedReturn: 0.026,
+    closingLineValue: 0.02,
+    brierScore: 0.19,
+    calibrationError: 0.04,
+    edgeDecay: 0.01,
+    informationLagSec: 45,
+    fetchLagSec: 4,
+    marketMoveBeforeSignal: 0.004,
+    marketMoveAfterSignal: 0.03,
+    maxAdverseExcursion: -0.01,
+    maxFavorableExcursion: 0.04,
+    liquidityAssumption: "top_of_book",
+    slippageAssumption: "half_spread",
+    passFail: "pass",
+    failureReason: "",
+    createdAt: "2026-05-06T10:29:00.000Z"
   }
 ];
 
@@ -584,25 +788,56 @@ export const mockPolyAlphaPromotionDecisions: PolyAlphaPromotionDecision[] = [
     source: "mock",
     stale: true,
     id: "poly-promotion-fed",
+    opportunityId: "poly-opp-fed-june",
     shadowSignalId: "poly-shadow-fed",
-    marketId: "mkt-fed-2026",
+    strategyVersionId: "strategy-v1",
     decision: "watch",
     reason: "Strong signal, but wait for the next liquidity refresh before promotion.",
-    sizeUsd: 0,
-    decidedAt: "2026-05-06T10:30:00.000Z",
-    createdAt: "2026-05-06T10:30:00.000Z"
+    predictionMetrics: { hitRate: 0.56 },
+    tradingMetrics: { capacityUsd: 750 },
+    metrics: { score: 0.81 },
+    criticBlockers: [],
+    riskChecks: { maxSizeUsd: 250 },
+    proposalId: "",
+    decidedAt: "2026-05-06T10:30:00.000Z"
   },
   {
     source: "mock",
     stale: true,
     id: "poly-promotion-btc",
+    opportunityId: "poly-opp-btc-may",
     shadowSignalId: "poly-shadow-btc",
-    marketId: "mkt-btc-100k",
-    decision: "defer",
+    strategyVersionId: "strategy-v1",
+    decision: "reject",
     reason: "Momentum evidence is mixed.",
-    sizeUsd: 0,
-    decidedAt: "2026-05-06T10:25:00.000Z",
-    createdAt: "2026-05-06T10:25:00.000Z"
+    predictionMetrics: { hitRate: 0.49 },
+    tradingMetrics: { capacityUsd: 0 },
+    metrics: { score: 0.43 },
+    criticBlockers: ["mixed_evidence"],
+    riskChecks: { maxSizeUsd: 0 },
+    proposalId: "",
+    decidedAt: "2026-05-06T10:25:00.000Z"
+  }
+];
+
+export const mockPolyAlphaAuditEvents: PolyAlphaAuditEvent[] = [
+  {
+    source: "mock",
+    stale: true,
+    id: "poly-audit-shadow",
+    action: "shadow_signal_created",
+    entityType: "shadow_signal",
+    entityId: "poly-shadow-fed",
+    opportunityId: "poly-opp-fed-june",
+    strategyVersionId: "strategy-v1",
+    actorType: "system",
+    actorId: "poly-alpha",
+    before: {},
+    after: { status: "shadow" },
+    result: "success",
+    reason: "Mock shadow signal created for fallback data.",
+    requestId: "",
+    createdAt: "2026-05-06T10:13:00.000Z"
   }
 ];
 
